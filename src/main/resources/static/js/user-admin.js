@@ -7,6 +7,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const deleteModal = deleteModalEl ? new bootstrap.Modal(deleteModalEl) : null;
     const userForm = document.getElementById('userForm');
     const saveUserBtn = document.getElementById('saveUserBtn');
+    const filterModal = new bootstrap.Modal(document.getElementById('filterModal'));
+
+    // Estado de filtros actual
+    let currentFilters = {
+        rol: '',
+        especialidad: '',
+        activo: false,
+        searchQuery: ''
+    };
+    let allUsers = []; // Guardar todos los usuarios para filtrar
 
     function formatRoles(roles) {
         if (!roles) return '';
@@ -15,19 +25,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Cargar opciones de roles y especialidades desde el backend
     function fetchRolesAndEspecialidades() {
-        // Roles
+        // Roles para modal de edición
         fetch('/api/roles')
             .then(r => r.json())
             .then(roles => {
                 const rolesSelect = document.getElementById('rolesSelect');
+                const filterRolSelect = document.getElementById('filterRol');
                 if (!rolesSelect) return;
                 // Usar el atributo disabled para el placeholder
                 rolesSelect.innerHTML = '<option value="" disabled selected>Seleccione un rol</option>';
+                filterRolSelect.innerHTML = '<option value="">Todos los roles</option>';
                 roles.forEach(role => {
                     const option = document.createElement('option');
                     option.value = role.nombre;
                     option.textContent = role.nombre;
                     rolesSelect.appendChild(option);
+                    
+                    const filterOpt = option.cloneNode(true);
+                    filterRolSelect.appendChild(filterOpt);
                 });
             }).catch(err => console.error('No se pudieron cargar roles', err));
 
@@ -36,51 +51,165 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(r => r.json())
             .then(especialidades => {
                 const espSelect = document.getElementById('especialidadSelect');
+                const filterEspSelect = document.getElementById('filterEspecialidad');
                 if (!espSelect) return;
                 // Mantener la opción 'Sin especificar' y añadir las demás
                 espSelect.innerHTML = '<option value="">Sin especificar</option>';
+                filterEspSelect.innerHTML = '<option value="">Todas las especialidades</option>';
                 especialidades.forEach(e => {
                     const opt = document.createElement('option');
                     opt.value = e;
                     opt.textContent = e;
                     espSelect.appendChild(opt);
+                    
+                    const filterOpt = opt.cloneNode(true);
+                    filterEspSelect.appendChild(filterOpt);
                 });
             }).catch(err => console.error('No se pudieron cargar especialidades', err));
     }
 
     function fetchUsers() {
-        usersTbody.innerHTML = '<tr><td colspan="6" class="text-center">Cargando...</td></tr>';
+        usersTbody.innerHTML = '<tr><td colspan="7" class="text-center">Cargando...</td></tr>';
         fetch('/api/usuarios')
             .then(r => r.json())
             .then(users => {
-                if (!Array.isArray(users) || users.length === 0) {
-                    usersTbody.innerHTML = '<tr><td colspan="6" class="text-center">No hay usuarios.</td></tr>';
-                    return;
-                }
-                usersTbody.innerHTML = '';
-                users.forEach(u => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td>${u.id}</td>
-                        <td>${u.nombre || ''} ${u.apellido || ''}</td>
-                        <td>${u.email || ''}</td>
-                        <td>${formatRoles(u.roles)}</td>
-                        <td>${(u.active || u.isActive) ? 'Sí' : 'No'}</td>
-                        <td>
-                            <button class="btn btn-sm btn-primary btn-edit" data-id="${u.id}">Editar</button>
-                            <button class="btn btn-sm btn-danger btn-delete" data-id="${u.id}">Eliminar</button>
-                            <button class="btn btn-sm btn-secondary btn-toggle" data-id="${u.id}">${(u.active || u.isActive) ? 'Desactivar' : 'Activar'}</button>
-                        </td>
-                    `;
-                    usersTbody.appendChild(tr);
-                });
-                attachRowEvents();
+                allUsers = users || [];
+                applyFiltersAndDisplay();
             })
             .catch(err => {
                 console.error(err);
-                usersTbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error al cargar usuarios.</td></tr>';
+                usersTbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Error al cargar usuarios.</td></tr>';
             });
     }
+
+    // CA 5.5: Filtro de permisos de Supervisor (solo ve Técnicos de su equipo)
+    function isSupervisor() {
+        // Lógica futura: revisar si el usuario actual es Supervisor
+        // Por ahora retorna false; se implementa cuando haya autenticación
+        return false;
+    }
+
+    function applyFiltersAndDisplay() {
+        let filtered = allUsers;
+
+        // CA 5.5: Si es Supervisor, filtrar para mostrar solo Técnicos
+        if (isSupervisor()) {
+            filtered = filtered.filter(u => 
+                u.roles && u.roles.some(r => r.nombre && r.nombre.toUpperCase() === 'TÉCNICO')
+            );
+        }
+
+        // CA 5.1: Filtro por Rol
+        if (currentFilters.rol) {
+            filtered = filtered.filter(u => 
+                u.roles && u.roles.some(r => r.nombre === currentFilters.rol)
+            );
+        }
+
+        // CA 5.2: Filtro por Especialidad
+        if (currentFilters.especialidad) {
+            filtered = filtered.filter(u => 
+                u.especialidad && u.especialidad.toLowerCase() === currentFilters.especialidad.toLowerCase()
+            );
+        }
+
+        // Filtro por estado activo
+        if (currentFilters.activo) {
+            filtered = filtered.filter(u => u.active || u.isActive);
+        }
+
+        // CA 5.3: Búsqueda por Nombre, Apellido, Email
+        if (currentFilters.searchQuery) {
+            const q = currentFilters.searchQuery.toLowerCase();
+            filtered = filtered.filter(u => {
+                const nombre = (u.nombre || '').toLowerCase();
+                const apellido = (u.apellido || '').toLowerCase();
+                const email = (u.email || '').toLowerCase();
+                return nombre.includes(q) || apellido.includes(q) || email.includes(q);
+            });
+        }
+
+        // CA 5.4: Mostrar "sin resultados" si no hay datos
+        if (filtered.length === 0) {
+            usersTbody.innerHTML = '<tr><td colspan="7" class="text-center">No hay usuarios que coincidan.</td></tr>';
+            document.getElementById('noResultsDiv').classList.remove('d-none');
+            return;
+        }
+
+        document.getElementById('noResultsDiv').classList.add('d-none');
+
+        usersTbody.innerHTML = '';
+        filtered.forEach(u => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${u.id}</td>
+                <td>${u.nombre || ''} ${u.apellido || ''}</td>
+                <td>${u.email || ''}</td>
+                <td>${u.especialidad || '-'}</td>
+                <td>${formatRoles(u.roles)}</td>
+                <td>${(u.active || u.isActive) ? 'Sí' : 'No'}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary btn-edit" data-id="${u.id}">Editar</button>
+                    <button class="btn btn-sm btn-danger btn-delete" data-id="${u.id}">Eliminar</button>
+                    <button class="btn btn-sm btn-secondary btn-toggle" data-id="${u.id}">${(u.active || u.isActive) ? 'Desactivar' : 'Activar'}</button>
+                </td>
+            `;
+            usersTbody.appendChild(tr);
+        });
+        attachRowEvents();
+    }
+
+    function updateFilterStatus() {
+        const parts = [];
+        if (currentFilters.rol) parts.push(`Rol: ${currentFilters.rol}`);
+        if (currentFilters.especialidad) parts.push(`Especialidad: ${currentFilters.especialidad}`);
+        if (currentFilters.activo) parts.push('Solo activos');
+        if (currentFilters.searchQuery) parts.push(`Búsqueda: "${currentFilters.searchQuery}"`);
+        
+        const statusDiv = document.getElementById('filterStatusDiv');
+        const statusSpan = document.getElementById('filterStatus');
+        if (parts.length > 0) {
+            statusSpan.textContent = parts.join(' | ');
+            statusDiv.classList.remove('d-none');
+        } else {
+            statusDiv.classList.add('d-none');
+        }
+    }
+
+    // Handlers de filtros
+    document.getElementById('filterBtn').addEventListener('click', () => {
+        filterModal.show();
+    });
+
+    document.getElementById('applyFiltersBtn').addEventListener('click', () => {
+        currentFilters.rol = document.getElementById('filterRol').value;
+        currentFilters.especialidad = document.getElementById('filterEspecialidad').value;
+        currentFilters.activo = document.getElementById('filterActive').checked;
+        updateFilterStatus();
+        applyFiltersAndDisplay();
+    });
+
+    document.getElementById('resetFiltersBtn').addEventListener('click', () => {
+        document.getElementById('filterRol').value = '';
+        document.getElementById('filterEspecialidad').value = '';
+        document.getElementById('filterActive').checked = false;
+        currentFilters.rol = '';
+        currentFilters.especialidad = '';
+        currentFilters.activo = false;
+        updateFilterStatus();
+        applyFiltersAndDisplay();
+    });
+
+    document.getElementById('clearFiltersLink').addEventListener('click', (e) => {
+        e.preventDefault();
+        currentFilters.rol = '';
+        currentFilters.especialidad = '';
+        currentFilters.activo = false;
+        currentFilters.searchQuery = '';
+        document.getElementById('searchInput').value = '';
+        updateFilterStatus();
+        applyFiltersAndDisplay();
+    });
 
     function attachRowEvents() {
         document.querySelectorAll('.btn-edit').forEach(btn => {
@@ -272,11 +401,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Búsqueda simple
     document.getElementById('searchBtn').addEventListener('click', () => {
-        const q = document.getElementById('searchInput').value.toLowerCase();
-        document.querySelectorAll('#usersTbody tr').forEach(tr => {
-            const txt = tr.textContent.toLowerCase();
-            tr.style.display = txt.includes(q) ? '' : 'none';
-        });
+        currentFilters.searchQuery = document.getElementById('searchInput').value;
+        updateFilterStatus();
+        applyFiltersAndDisplay();
+    });
+
+    // Búsqueda al presionar Enter en el input
+    document.getElementById('searchInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            document.getElementById('searchBtn').click();
+        }
     });
 
     // Carga inicial

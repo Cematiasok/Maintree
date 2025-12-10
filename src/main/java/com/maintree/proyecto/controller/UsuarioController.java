@@ -4,6 +4,7 @@ import com.maintree.proyecto.model.Usuario;
 import com.maintree.proyecto.service.UsuarioService;
 import com.maintree.proyecto.dao.RolRepository;
 import com.maintree.proyecto.model.Rol;
+import com.maintree.proyecto.util.PasswordHasher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -57,9 +58,9 @@ public class UsuarioController {
             existing.setNombre(update.getNombre() != null ? update.getNombre() : existing.getNombre());
             existing.setApellido(update.getApellido() != null ? update.getApellido() : existing.getApellido());
             existing.setEspecialidad(update.getEspecialidad() != null ? update.getEspecialidad() : existing.getEspecialidad());
-            // actualizar password si viene
+            // actualizar password si viene - SIEMPRE hashear
             if (update.getPassword() != null && !update.getPassword().isEmpty()) {
-                existing.setPassword(update.getPassword());
+                existing.setPassword(PasswordHasher.hashPassword(update.getPassword()));
             }
             // actualizar isActive si viene
             if (update.getIsActive() != null) existing.setIsActive(update.getIsActive());

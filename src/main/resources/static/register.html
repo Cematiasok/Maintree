@@ -16,13 +16,13 @@
     <div class="information">
         <div class="Imfo-childs">
             <h2>Bienvenido</h2>
-            <p>Para unirte a nuestra comunidad por favor regístrate con tus datos.</p>
+            <p>Para unirte a nuestra comunidad por favor regístrate.</p>
         </div>
     </div>
 
     <div class="form-information">
         <div class="logo-container">
-            <img  src=" css/img/logo_Maintree.png" alt="Logo Maintree">
+            <img  src="css/img/logo_Maintree.png" alt="Logo Maintree">
         </div>
         <!-- Este div mostrará los mensajes de error o éxito que vengan del servidor -->
         <div id="message" class="error"></div>
@@ -31,17 +31,17 @@
         <form id="registerForm" class="form-login">
             <!-- 2. Cada campo 'input' tiene un 'name' (ej: "nombre"). Este 'name' se usa como la clave para el dato que el usuario introduce. -->
             <div class="mb-3">
-                <label for="nombre" class="form-label">Nombre</label>
+                <label for="nombre" class="form-label">Nombre *</label>
                 <input type="text" class="form-control" id="nombre" name="nombre" placeholder="Tu nombre" required>
             </div>
 
             <div class="mb-3">
-                <label for="apellido" class="form-label">Apellido</label>
+                <label for="apellido" class="form-label">Apellido *</label>
                 <input type="text" class="form-control" id="apellido" name="apellido" placeholder="Tu apellido" required>
             </div>
 
             <div class="mb-3">
-                <label for="email" class="form-label">Email</label>
+                <label for="email" class="form-label">Email *</label>
                 <input type="email" class="form-control" id="email" name="email" placeholder="correo@ejemplo.com" required>
             </div>
 
@@ -66,11 +66,12 @@
             </div>
 
             <div class="mb-3">
-                <label for="password" class="form-label">Contraseña</label>
+                <label for="password" class="form-label">Contraseña *</label>
                 <input type="password" class="form-control" id="password" name="password" placeholder="**********" required>
             </div>
 
             <!-- 3. El botón de tipo "submit" dentro de un formulario intenta enviarlo cuando se hace clic. JavaScript interceptará esta acción. -->
+             <label for="obligatorios" class="form-label">(*) Campos obligatorios</label>
             <button type="submit" class="btn btn-primary w-100 btn-login">REGISTRARSE</button>
             <p class="signup text-center mt-3">¿Ya tienes cuenta? <a href="main.html">INICIA SESIÓN</a></p>
         </form>
