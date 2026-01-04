@@ -66,7 +66,7 @@ public class PasswordRecoveryService {
             MimeMessageHelper helper = new MimeMessageHelper(message, true);
 
             helper.setTo(usuario.getEmail() != null ? usuario.getEmail() : "");
-            helper.setSubject("Recuperación de Contraseña - MaintreeApp");
+            helper.setSubject("Recuperación de Contraseña - Maintree");
 
             // Construir baseUrl de forma robusta a partir de la request URL recibida.
             String baseUrl;

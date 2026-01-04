@@ -2,7 +2,7 @@
 
 ## ✅ ESTADO: COMPLETADO EXITOSAMENTE
 
-Tu proyecto **MaintreeApp** ha sido migrado completamente a **Bootstrap 5** mientras mantiene toda la funcionalidad y estilos personalizados.
+Tu proyecto **Maintree** ha sido migrado completamente a **Bootstrap 5** mientras mantiene toda la funcionalidad y estilos personalizados.
 
 ---
 
@@ -17,7 +17,7 @@ Tu proyecto **MaintreeApp** ha sido migrado completamente a **Bootstrap 5** mien
 - ✅ Archivos duplicados limpiados
 
 ### 2. Migramos a Bootstrap 5 (Segunda Fase)
-- ✅ main.html - Inicio de sesión
+- ✅ `login.html` - Inicio de sesión
 - ✅ register.html - Registro
 - ✅ recuperar.html - Recuperar contraseña
 - ✅ reset-password.html - Restablecer contraseña
@@ -55,11 +55,11 @@ mvn cargo:run
 
 ### 2. Acceder a la aplicación
 ```
-http://localhost:8080/mywebapp/main.html
+http://localhost:8080/mywebapp/login.html
 ```
 
 ### 3. Probar páginas
-- ✅ `main.html` - Login
+- ✅ `login.html` - Login
 - ✅ `register.html` - Registro
 - ✅ `recuperar.html` - Recuperar contraseña
 - ✅ `reset-password.html` - Reset

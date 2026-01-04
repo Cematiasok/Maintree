@@ -4,7 +4,7 @@ import com.maintree.proyecto.dao.RolRepository;
 import com.maintree.proyecto.dao.UsuarioRepository;
 import com.maintree.proyecto.model.Rol;
 import com.maintree.proyecto.model.Usuario;
-import com.maintree.proyecto.util.PasswordHasher;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -15,18 +15,25 @@ import java.util.Set;
 @Service
 public class RegisterService {
 
-    @Autowired
-    private UsuarioRepository usuarioRepository;
+    private final UsuarioRepository usuarioRepository;
+
+    private final RolRepository rolRepository;
+
+    private final PasswordEncoder passwordEncoder;
 
     @Autowired
-    private RolRepository rolRepository;
+    public RegisterService(UsuarioRepository usuarioRepository, RolRepository rolRepository, PasswordEncoder passwordEncoder) {
+        this.usuarioRepository = usuarioRepository;
+        this.rolRepository = rolRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
 
     public boolean registerUser(Usuario newUser, String rolNombre) throws SQLException, IllegalStateException {
         if (usuarioRepository.findByEmail(newUser.getEmail()) != null) {
             throw new IllegalStateException("El correo electrónico ya está registrado.");
         }
 
-        String hashedPassword = PasswordHasher.hashPassword(newUser.getPassword());
+        String hashedPassword = passwordEncoder.encode(newUser.getPassword());
         newUser.setPassword(hashedPassword);
         newUser.setActive(true);
 

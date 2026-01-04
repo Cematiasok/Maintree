@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 
@@ -52,6 +53,7 @@ public class UsuarioController {
     }
 
     @PutMapping("/usuarios/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> updateUsuario(@PathVariable int id, @RequestBody Usuario update) {
         return usuarioService.findById(id).map(existing -> {
             // actualizar campos permitidos
@@ -79,6 +81,7 @@ public class UsuarioController {
     }
 
     @DeleteMapping("/usuarios/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> deleteUsuario(@PathVariable int id) {
         if (usuarioService.findById(id).isPresent()) {
             // Baja lógica: marcar isActive = false

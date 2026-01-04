@@ -1,13 +1,9 @@
 package com.maintree.proyecto;
 
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-
-@SpringBootApplication
-public class MaintreeAppApplication {
-
-    public static void main(String[] args) {
-        SpringApplication.run(MaintreeAppApplication.class, args);
-    }
-
+/**
+ * Deprecated placeholder. Main application class was renamed to `MaintreeApplication`.
+ * The real bootstrap class is in `MaintreeApplication.java`.
+ */
+class DeprecatedMaintreeAppApplication {
+    // Deprecated: kept for compatibility in version control; not used at runtime.
 }

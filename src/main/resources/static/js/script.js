@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     messageDiv.style.color = 'green';
                     // Se espera 2 segundos y se redirige al usuario a la página de inicio de sesión.
                     setTimeout(() => {
-                        window.location.href = 'index.html';
+                        window.location.href = 'login.html';
                     }, 2000);
                 } else {
                     // 11. Si el servidor respondió con 'success: false', se muestra el mensaje de error que vino en la respuesta.
@@ -310,7 +310,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(async response => {
                 if (response.ok) {
                     // Redirigir al login o página principal con indicador de éxito
-                    window.location.href = 'index.html?reset=success';
+                    window.location.href = 'login.html?reset=success';
                 } else {
                     // Leer el texto devuelto por el servidor (mensaje de error)
                     const text = await response.text();

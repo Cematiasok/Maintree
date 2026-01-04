@@ -1,67 +1,123 @@
-# MaintreeApp
+# Maintree
 
-Aplicación Spring Boot para gestionar usuarios (ABM) con autenticación, registro, recuperación de contraseña por correo y panel de administración. Este README explica cómo levantar el proyecto y cómo funciona hoy; luego se irán sumando funcionalidades más interesantes.
+[![CI](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml/badge.svg)](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml)
+
+Aplicación Spring Boot para gestionar usuarios (ABM) con autenticación, registro, recuperación de contraseña por correo y panel de administración. Este README incluye instrucciones rápidas para desarrollo, pruebas y despliegue, y apunta a `aprende.md` con una guía ampliada paso a paso.
+
+> Nota: sustituye `<OWNER>/<REPO>` por tu repositorio real para que el badge muestre el estado del CI.
+
+## Enlaces rápidos
+- Guía de aprendizaje ampliada: `aprende.md` (explicaciones línea a línea, ejemplos cURL, errores comunes, tests). ✅
+- Código fuente: `src/main/java/com/maintree/proyecto/`
+
+---
 
 ## Requisitos
 - JDK 22+
 - Maven 3.9+
-- MySQL 8.x en local
-- Mailhog (opcional) para probar envío de correos en desarrollo
+- MySQL 8.x (recomendado) — asegúrate de que la versión del servidor sea 8.x para evitar advertencias de dialecto
+- Mailhog (opcional, para pruebas de correo)
 - PowerShell o Bash para ejecutar comandos
 
-## Configuración rápida
+---
+
+## Configuración rápida (desarrollo)
 1) Base de datos
 - Crea la BD: `CREATE DATABASE maintreebd;`
-- Ajusta credenciales en `src/main/resources/application.properties` si no usas `root` sin contraseña:
-	- `spring.datasource.url=jdbc:mysql://localhost:3306/maintreebd`
-	- `spring.datasource.username=...`
-	- `spring.datasource.password=...`
+- Ajusta credenciales en `src/main/resources/application.properties`:
+  - `spring.datasource.url=jdbc:mysql://localhost:3306/maintreebd`
+  - `spring.datasource.username=...`
+  - `spring.datasource.password=...`
 
 2) Correo (local con Mailhog)
-- Ejecuta Mailhog desde la raíz (Windows): `./mailhog.exe`
+- Ejecuta Mailhog: descarga y ejecuta `mailhog` o usa Docker: `docker run -p 1025:1025 -p 8025:8025 mailhog/mailhog`
 - UI de Mailhog: http://localhost:8025
-- La app usa host `localhost` y puerto `1025` (configurable en `application.properties`).
+- Configuración en `application.properties` por defecto apunta a `localhost:1025`.
 
 3) Admin seeder (solo para dev)
-- Por defecto `admin.create=true` crea un rol ADMIN y un usuario `admin@local` con password `AdminPass123!` al arrancar.
-- Desactívalo en entornos reales con `admin.create=false` o variable de entorno `ADMIN_CREATE=false`.
+- `admin.create=true` crea rol `ADMIN` y usuario `admin@local` con `AdminPass123!` al arrancar.
+- En producción, desactiva: `admin.create=false` o usa perfiles (`spring.profiles.active=prod`).
+
+---
 
 ## Cómo ejecutar
-Desde la raíz del repo:
+- Compilar y correr tests:
+```bash
+mvn test
+```
+- Ejecutar la app en desarrollo:
+```bash
+mvn spring-boot:run
+```
+- Empaquetar y ejecutar JAR:
+```bash
+mvn -DskipTests package
+java -jar target/maintree-1.0-SNAPSHOT.jar
+```
+- Accede a la UI: `http://localhost:8081/` (ajusta `server.port` en `application.properties` si es necesario).
 
-- Arrancar directamente con Maven (puerto por defecto `8081`):
-	```powershell
-	mvn spring-boot:run
-	```
+---
 
-- O empaquetar y correr el JAR:
-	```powershell
-	mvn -DskipTests package
-	java -jar target\maintreeApp-*.jar
-	```
+## Tests y calidad
+- Ejecuta la suite completa: `mvn test` (incluye tests unitarios e integración con MockMvc).
+- Para ejecutar un test en particular: `mvn -Dtest=RegisterServiceTest#* test`.
+- Notas:
+  - Mockito usa un agente dinámico en tests locales; es informativo pero se recomienda configurar Mockito como agente para entornos stricter.
+  - Los tests de integración usan una base en memoria/BD local según configuración.
 
-Visita `http://localhost:8081/` para la UI pública y `http://localhost:8081/user-admin.html` para el panel (requiere rol ADMIN).
+---
 
-## Qué hay hoy (ABM)
-- Registro y login de usuarios (contraseñas hasheadas).
-- Recuperación y reseteo de contraseña via email con token con expiración.
-- ABM de usuarios y roles desde `user-admin.html` (activar/desactivar, editar, asignar rol).
-- Rol por defecto `CLIENTE` configurable (`app.default.role`).
+## Seguridad y recomendaciones de producción
+- Contraseñas: se usa `BCrypt` (via `PasswordEncoder`) para hashear contraseñas con salt y coste configurable.
+- Rutas sensibles: `/api/admin/**` están protegidas por rol ADMIN (configurado en `SecurityConfig`).
+- CSRF: deshabilitado para APIs REST en dev; habilítalo si sirves formularios desde el servidor.
+- HTTPS: fuerza HTTPS en producción y marca cookies como `Secure; HttpOnly`.
+- Sessions: la app actualmente persiste `SecurityContext` en sesión para compatibilidad con la UI basada en cookies; si migras a SPA considera JWT.
 
-## Estructura útil
+---
+
+## Uso rápido: ejemplos cURL (prácticos)
+- Login:
+```bash
+curl -i -X POST http://localhost:8081/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@local","password":"AdminPass123!"}'
+```
+- Registrar usuario:
+```bash
+curl -i -X POST http://localhost:8081/api/register -H "Content-Type: application/json" -d '{"nombre":"Ana","apellido":"Lopez","email":"ana@example.com","password":"Secreta123","rol":"CLIENTE"}'
+```
+- Ejecutar la suite de tests:
+```bash
+mvn test
+```
+
+---
+
+## Estructura del proyecto
 - Código Java: `src/main/java/com/maintree/proyecto/`
-	- Controladores: `controller/`
-	- Servicios: `service/`
-	- Repositorios: `dao/`
-	- Configuración y seeder: `config/`
-- Frontend estático: `src/main/resources/static/` (`index.html`, `user-admin.html`, JS/CSS).
-- Configuración: `src/main/resources/application.properties`
-- SQL de sincronización de datos: `src/main/resources/db/migration_sync.sql`
+  - `controller/`, `service/`, `dao/`, `config/`, `util/`
+- Recursos: `src/main/resources/` (properties, static assets y SQL)
+- Tests: `src/test/java/` (unitarios e integración)
 
-## Tips y problemas comunes
-- Si la app no levanta: revisa conexión MySQL y el puerto `server.port=8081`.
-- Si no llegan correos: confirma Mailhog en host `localhost` y puerto `1025`.
-- Cambia las credenciales del seeder antes de exponer la app.
+---
 
-## Próximos pasos
-- Nuevas funcionalidades sobre el ABM actual (p. ej., permisos más granulares, reportes, flujos adicionales). Si necesitas priorizar algo, avísame.
+## Errores comunes y soluciones rápidas
+- NullPointer en tests por inyección de dependencias: usa inyección por constructor y `@InjectMocks` en pruebas.
+- `rawPassword cannot be null` al hashear: asegurar que `password` esté presente antes de llamar a `passwordEncoder.encode`.
+- Problemas con sesiones en MockMvc: almacenar `SPRING_SECURITY_CONTEXT` en la sesión o usar helpers de Spring Security para tests.
+
+---
+
+## Contribuir
+1. Crea una rama por feature: `git checkout -b feat/nombre-feature`.
+2. Añade tests para cualquier cambio en lógica de negocio.
+3. Ejecuta `mvn test` localmente y solicita PR.
+
+---
+
+## Recursos adicionales
+- `aprende.md`: guía ampliada con ejemplos concretos y sección "Explicación línea a línea".
+- Documentación oficial: Spring Boot, Spring Security, JPA/Hibernate.
+
+Si quieres, puedo añadir un archivo `CONTRIBUTING.md` y configurar un workflow de GitHub Actions para ejecutar `mvn test` en cada PR.

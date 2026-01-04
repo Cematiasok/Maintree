@@ -3,9 +3,14 @@ package com.maintree.proyecto.controller;
 import com.maintree.proyecto.model.Usuario;
 import com.maintree.proyecto.service.LoginService;
 import com.maintree.proyecto.dao.UsuarioRepository;
+import com.maintree.proyecto.service.CustomUserDetailsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;  // Incluye CrossOrigin
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.Map;
 import java.util.HashMap;
@@ -21,8 +26,11 @@ public class LoginController {
     @Autowired
     private UsuarioRepository usuarioRepository;
 
+    @Autowired
+    private CustomUserDetailsService customUserDetailsService;
+
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody Usuario usuario) {
+    public ResponseEntity<?> login(@RequestBody Usuario usuario, HttpServletRequest request) {
         try {
             System.out.println("Recibida petición de login para email: " + usuario.getEmail());
             
@@ -39,6 +47,22 @@ public class LoginController {
                 if (esValido) {
                     // Recuperar usuario para incluir roles en la respuesta
                     Usuario u = usuarioRepository.findByEmail(usuario.getEmail());
+                    // Setear Authentication en Spring Security para que la sesión quede autenticada
+                    try {
+                        UserDetails userDetails = customUserDetailsService.loadUserByUsername(usuario.getEmail());
+                        var auth = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                        SecurityContextHolder.getContext().setAuthentication(auth);
+                        // Aseguramos que la sesión tenga el SecurityContext para frameworks/MockMvc
+                        try {
+                            var session = request.getSession(true);
+                            session.setAttribute("SPRING_SECURITY_CONTEXT", SecurityContextHolder.getContext());
+                        } catch (Exception ex) {
+                            System.err.println("No fue posible almacenar SecurityContext en la sesión: " + ex.getMessage());
+                        }
+                    } catch (Exception ex) {
+                        System.err.println("No fue posible cargar UserDetails: " + ex.getMessage());
+                    }
+
                     responseMap.put("success", true);
                     responseMap.put("message", "Inicio de sesión correcto");
                     if (u != null && u.getRoles() != null) {
