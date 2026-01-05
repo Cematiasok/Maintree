@@ -66,7 +66,7 @@ public class SecurityIntegrationTest {
             adminUser.setEmail("admin-test@local");
             adminUser.setPassword(passwordEncoder.encode("AdminPass123!"));
             adminUser.setIsActive(true);
-            adminUser.setRoles(Collections.singleton(admin));
+            adminUser.setRoles(new java.util.HashSet<>(Collections.singleton(admin)));
             usuarioRepository.save(adminUser);
         }
 
@@ -77,7 +77,7 @@ public class SecurityIntegrationTest {
             clienteUser.setEmail("cliente-test@local");
             clienteUser.setPassword(passwordEncoder.encode("ClientePass123!"));
             clienteUser.setIsActive(true);
-            clienteUser.setRoles(Collections.singleton(cliente));
+            clienteUser.setRoles(new java.util.HashSet<>(Collections.singleton(cliente)));
             usuarioRepository.save(clienteUser);
         }
     }
@@ -99,8 +99,10 @@ public class SecurityIntegrationTest {
         mockMvc.perform(get("/api/usuarios").session(session)).andExpect(status().isOk());
 
         // try update usuario as admin -> should be allowed
+        Usuario admin = usuarioRepository.findByEmail("admin-test@local");
+        int adminId = admin.getId();
         String updateJson = mapper.writeValueAsString(Collections.singletonMap("nombre", "NuevoNombre"));
-        mockMvc.perform(put("/api/usuarios/1").contentType(MediaType.APPLICATION_JSON).content(updateJson).session(session)).andExpect(status().isOk());
+        mockMvc.perform(put("/api/usuarios/" + adminId).contentType(MediaType.APPLICATION_JSON).content(updateJson).session(session)).andExpect(status().isOk());
     }
 
     @Test
@@ -112,6 +114,8 @@ public class SecurityIntegrationTest {
         MockHttpSession session = (MockHttpSession) r.getRequest().getSession(false);
 
         String updateJson = mapper.writeValueAsString(Collections.singletonMap("nombre", "NuevoNombre"));
-        mockMvc.perform(put("/api/usuarios/1").contentType(MediaType.APPLICATION_JSON).content(updateJson).session(session)).andExpect(status().isForbidden());
+        Usuario admin = usuarioRepository.findByEmail("admin-test@local");
+        int adminId = admin.getId();
+        mockMvc.perform(put("/api/usuarios/" + adminId).contentType(MediaType.APPLICATION_JSON).content(updateJson).session(session)).andExpect(status().isForbidden());
     }
 }

@@ -41,7 +41,8 @@ public class RegisterService {
         if (selectedRole == null) {
             throw new IllegalStateException("El rol '" + rolNombre + "' seleccionado no es válido o no existe en la base de datos.");
         }
-        Set<Rol> roles = Collections.singleton(selectedRole);
+        Set<Rol> roles = new java.util.HashSet<>();
+        roles.add(selectedRole);
         newUser.setRoles(roles);
 
         usuarioRepository.save(newUser);
