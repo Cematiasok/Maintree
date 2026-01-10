@@ -18,6 +18,7 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
+import java.util.Objects;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -92,8 +93,8 @@ public class SecurityIntegrationTest {
         // login admin
         String content = mapper.writeValueAsString(Collections.singletonMap("email", "admin-test@local"));
         content = content.replace("}", ", \"password\": \"AdminPass123!\"}");
-        MvcResult r = mockMvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON).content(content)).andExpect(status().isOk()).andReturn();
-        MockHttpSession session = (MockHttpSession) r.getRequest().getSession(false);
+        MvcResult r = mockMvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON_VALUE).content(Objects.requireNonNull(content))).andExpect(status().isOk()).andReturn();
+        MockHttpSession session = (MockHttpSession) Objects.requireNonNull(r.getRequest().getSession(false));
 
         // now access protected endpoint with session
         mockMvc.perform(get("/api/usuarios").session(session)).andExpect(status().isOk());
@@ -102,7 +103,7 @@ public class SecurityIntegrationTest {
         Usuario admin = usuarioRepository.findByEmail("admin-test@local");
         int adminId = admin.getId();
         String updateJson = mapper.writeValueAsString(Collections.singletonMap("nombre", "NuevoNombre"));
-        mockMvc.perform(put("/api/usuarios/" + adminId).contentType(MediaType.APPLICATION_JSON).content(updateJson).session(session)).andExpect(status().isOk());
+        mockMvc.perform(put("/api/usuarios/" + adminId).contentType(MediaType.APPLICATION_JSON_VALUE).content(Objects.requireNonNull(updateJson)).session(Objects.requireNonNull(session))).andExpect(status().isOk());
     }
 
     @Test
@@ -110,12 +111,12 @@ public class SecurityIntegrationTest {
         // login cliente
         String content = mapper.writeValueAsString(Collections.singletonMap("email", "cliente-test@local"));
         content = content.replace("}", ", \"password\": \"ClientePass123!\"}");
-        MvcResult r = mockMvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON).content(content)).andExpect(status().isOk()).andReturn();
-        MockHttpSession session = (MockHttpSession) r.getRequest().getSession(false);
+        MvcResult r = mockMvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON_VALUE).content(Objects.requireNonNull(content))).andExpect(status().isOk()).andReturn();
+        MockHttpSession session = (MockHttpSession) Objects.requireNonNull(r.getRequest().getSession(false));
 
         String updateJson = mapper.writeValueAsString(Collections.singletonMap("nombre", "NuevoNombre"));
         Usuario admin = usuarioRepository.findByEmail("admin-test@local");
         int adminId = admin.getId();
-        mockMvc.perform(put("/api/usuarios/" + adminId).contentType(MediaType.APPLICATION_JSON).content(updateJson).session(session)).andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/usuarios/" + adminId).contentType(MediaType.APPLICATION_JSON_VALUE).content(Objects.requireNonNull(updateJson)).session(Objects.requireNonNull(session))).andExpect(status().isForbidden());
     }
 }

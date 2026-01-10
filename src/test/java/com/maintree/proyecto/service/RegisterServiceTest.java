@@ -4,7 +4,7 @@ import com.maintree.proyecto.dao.RolRepository;
 import com.maintree.proyecto.dao.UsuarioRepository;
 import com.maintree.proyecto.model.Rol;
 import com.maintree.proyecto.model.Usuario;
-import org.junit.jupiter.api.BeforeEach;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -35,6 +35,7 @@ class RegisterServiceTest {
     @InjectMocks
     private RegisterService registerService;
 
+    @SuppressWarnings("null")
     @Test
     void registerUser_success() throws SQLException {
         Usuario newUser = new Usuario();
@@ -57,6 +58,7 @@ class RegisterServiceTest {
         assertTrue(saved.getIsActive());
     }
 
+    @SuppressWarnings("null")
     @Test
     void registerUser_duplicateEmailThrows() {
         Usuario newUser = new Usuario(); newUser.setEmail("dup@e");
@@ -66,6 +68,7 @@ class RegisterServiceTest {
         verify(usuarioRepository, never()).save(any());
     }
 
+    @SuppressWarnings("null")
     @Test
     void registerUser_missingRoleThrows() {
         Usuario newUser = new Usuario(); newUser.setEmail("x@e"); newUser.setPassword("pw");
