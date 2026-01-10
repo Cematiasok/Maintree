@@ -1,6 +1,45 @@
 # Aprende Maintree
 Guía técnica paso a paso para entender cómo funciona el proyecto. Piensa que es una clase universitaria aplicada: recorremos arquitectura, modelo de datos, controladores, servicios, seguridad y buenas prácticas.
 
+## Resumen fácil (para personas no técnicas) 💡
+Maintree es una pequeña aplicación que gestiona usuarios y permisos. Permite registrar usuarios, iniciar sesión, recuperar contraseñas y que un administrador apruebe o administre cuentas. En términos sencillos: es la parte del sistema que controla quién puede entrar, qué puede ver y qué puede hacer.
+
+## Cómo arrancar la aplicación (paso a paso) ▶️
+**Requisitos previos**
+- Java 21 instalado (comprueba con `java -version`).
+- Maven instalado si vas a ejecutar desde código (`mvn`) o JDK con `java` para ejecutar el JAR.
+- Una base de datos MySQL si quieres usar los datos reales. Para pruebas locales, el proyecto usa H2 en memoria en los tests.
+- (Opcional) Mailhog o similar en local para ver correos de recuperación: configuración por defecto usa `localhost:1025`.
+
+**Arrancar en desarrollo (Windows / PowerShell)**
+1) Abrir PowerShell en la carpeta del proyecto.
+2) Compilar y arrancar con Maven:
+```powershell
+mvn spring-boot:run
+```
+Esto usará la configuración en `src/main/resources/application.properties` (por defecto `server.port=8081`).
+
+**Generar JAR y ejecutar**
+```powershell
+mvn -DskipTests package
+java -jar target/maintree-1.0-SNAPSHOT.jar
+```
+
+**Cambiar configuración**
+- Si necesitas apuntar a una base MySQL, edita `src/main/resources/application.properties` y configura `spring.datasource.url`, `spring.datasource.username` y `spring.datasource.password`.
+- Para recibir correos en local instala Mailhog o cambia `spring.mail.*` en `application.properties`.
+
+**Comprobaciones rápidas**
+- Accede a `http://localhost:8081/login.html` (o la ruta que tengas configurada).
+- Revisa logs en consola; si arrancó correctamente verás el mensaje `Started MaintreeApplication` y el puerto.
+
+**Problemas comunes y soluciones**
+- Error `Java version`: instala Java 21 o ajusta `pom.xml` al JDK disponible.
+- Error de conexión a BD: revisa `spring.datasource.*` y que MySQL esté corriendo y accesible.
+- No llegan correos: instala Mailhog y configura `spring.mail.host=localhost` y `spring.mail.port=1025`.
+
+---
+
 ## 1. Arquitectura y stack
 - **Spring Boot** con autoconfiguración (`@SpringBootApplication` en `MaintreeApplication` arranca todo).
 - **Capas**: Controller (expone API REST) → Service (reglas de negocio) → Repository (JPA) → Base de datos MySQL.
