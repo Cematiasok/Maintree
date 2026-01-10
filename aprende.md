@@ -40,6 +40,113 @@ java -jar target/maintree-1.0-SNAPSHOT.jar
 
 ---
 
+## Arrancar con Docker 🐳
+A continuación tienes pasos concretos para ejecutar Maintree en contenedores Docker. Incluye un ejemplo de `Dockerfile` (multistage) y un `docker-compose.yml` para ejecutar la app junto con MySQL y Mailhog.
+
+### Opción A — Imagen multistage (construir + ejecutar)
+1) Crea un archivo `Dockerfile` en la raíz del proyecto con este contenido:
+
+```dockerfile
+# Stage 1: build
+FROM maven:3.9.1-eclipse-temurin-21 AS build
+WORKDIR /app
+COPY pom.xml ./
+COPY src ./src
+RUN mvn -B -DskipTests package
+
+# Stage 2: runtime
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY --from=build /app/target/maintree-1.0-SNAPSHOT.jar app.jar
+EXPOSE 8081
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+```
+
+2) Construir la imagen (desde la raíz del repo):
+```bash
+docker build -t maintree:latest .
+```
+
+3) Ejecutar localmente apuntando a una base de datos existente o usando parámetros por defecto:
+```bash
+docker run --rm -p 8081:8081 \
+  -e SPRING_DATASOURCE_URL=jdbc:mysql://host.docker.internal:3306/maintree \
+  -e SPRING_DATASOURCE_USERNAME=miusuario \
+  -e SPRING_DATASOURCE_PASSWORD=miclave \
+  maintree:latest
+```
+- Nota: en Windows/Mac usa `host.docker.internal` para acceder a servicios en la máquina host.
+
+### Opción B — Usar Docker Compose (MySQL + Mailhog + App)
+1) Crea `docker-compose.yml` en la raíz con este ejemplo:
+
+```yaml
+version: '3.8'
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: maintree
+      MYSQL_USER: maintree
+      MYSQL_PASSWORD: secret
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  app:
+    build: .
+    image: maintree:latest
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/maintree
+      SPRING_DATASOURCE_USERNAME: maintree
+      SPRING_DATASOURCE_PASSWORD: secret
+      SPRING_MAIL_HOST: mailhog
+      SPRING_MAIL_PORT: 1025
+    depends_on:
+      - db
+      - mailhog
+
+volumes:
+  db_data:
+```
+
+2) Arrancar todo:
+```bash
+docker compose up -d --build
+```
+3) Comprobar estado y logs:
+```bash
+docker compose ps
+docker compose logs -f app
+```
+4) Abrir en navegador:
+- App: http://localhost:8081
+- Mailhog UI (ver correos): http://localhost:8025
+
+### Notas y buenas prácticas
+- Variables de Spring Boot se pasan como variables de entorno: usa `SPRING_DATASOURCE_URL`, `SPRING_MAIL_HOST`, etc.
+- Si prefieres no reconstruir la imagen al cambiar código, usa `mvn -DskipTests package` y luego `docker compose up --no-build` o monta el JAR con un volumen en desarrollo.
+- Para producción: usa imágenes base más ligeras, agrega salud (healthchecks), límites de recursos y no habilites la creación automática de esquemas en `spring.jpa.hibernate.ddl-auto`.
+
+---
+
+
 ## 1. Arquitectura y stack
 - **Spring Boot** con autoconfiguración (`@SpringBootApplication` en `MaintreeApplication` arranca todo).
 - **Capas**: Controller (expone API REST) → Service (reglas de negocio) → Repository (JPA) → Base de datos MySQL.
