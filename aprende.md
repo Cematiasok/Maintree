@@ -151,7 +151,7 @@ docker compose logs -f app
 - **Spring Boot** con autoconfiguración (`@SpringBootApplication` en `MaintreeApplication` arranca todo).
 - **Capas**: Controller (expone API REST) → Service (reglas de negocio) → Repository (JPA) → Base de datos MySQL.
 - **Modelo**: entidades `Usuario`, `Rol`, `Permiso` con relaciones `@ManyToMany`.
-- **Seguridad**: hash de contraseñas con BCrypt (`PasswordHasher`). No hay sesión/JWT: las respuestas son "success"/"roles" para el frontend.
+- **Seguridad**: Spring Security configurado en `config/SecurityConfig.java`; hash de contraseñas con BCrypt (`PasswordHasher`). No hay sesión/JWT: las respuestas son "success"/"roles" para el frontend.
 - **Correo**: `PasswordRecoveryService` usa `JavaMailSender` para reset de contraseña.
 - **Arch estáticos**: HTML/JS/CSS en `src/main/resources/static` servidos por `WebConfig`.
 
