@@ -1,659 +1,737 @@
-# Aprende Maintree
-Guía técnica paso a paso para entender cómo funciona el proyecto. Piensa que es una clase universitaria aplicada: recorremos arquitectura, modelo de datos, controladores, servicios, seguridad y buenas prácticas.
+# 📚 Aprende Maintree: Guía para Implementar este Proyecto desde Cero
 
-## Resumen fácil (para personas no técnicas) 💡
-Maintree es una pequeña aplicación que gestiona usuarios y permisos. Permite registrar usuarios, iniciar sesión, recuperar contraseñas y que un administrador apruebe o administre cuentas. En términos sencillos: es la parte del sistema que controla quién puede entrar, qué puede ver y qué puede hacer.
-
-## Cómo arrancar la aplicación (paso a paso) ▶️
-**Requisitos previos**
-- Java 21 instalado (comprueba con `java -version`).
-- Maven instalado si vas a ejecutar desde código (`mvn`) o JDK con `java` para ejecutar el JAR.
-- Una base de datos MySQL si quieres usar los datos reales. Para pruebas locales, el proyecto usa H2 en memoria en los tests.
-- (Opcional) Mailhog o similar en local para ver correos de recuperación: configuración por defecto usa `localhost:1025`.
-
-**Arrancar en desarrollo (Windows / PowerShell)**
-1) Abrir PowerShell en la carpeta del proyecto.
-2) Compilar y arrancar con Maven:
-```powershell
-mvn spring-boot:run
-```
-Esto usará la configuración en `src/main/resources/application.properties` (por defecto `server.port=8081`).
-
-**Generar JAR y ejecutar**
-```powershell
-mvn -DskipTests package
-java -jar target/maintree-1.0-SNAPSHOT.jar
-```
-
-**Cambiar configuración**
-- Si necesitas apuntar a una base MySQL, edita `src/main/resources/application.properties` y configura `spring.datasource.url`, `spring.datasource.username` y `spring.datasource.password`.
-- Para recibir correos en local instala Mailhog o cambia `spring.mail.*` en `application.properties`.
-
-**Comprobaciones rápidas**
-- Accede a `http://localhost:8081/login.html` (o la ruta que tengas configurada).
-- Revisa logs en consola; si arrancó correctamente verás el mensaje `Started MaintreeApplication` y el puerto.
-
-**Problemas comunes y soluciones**
-- Error `Java version`: instala Java 21 o ajusta `pom.xml` al JDK disponible.
-- Error de conexión a BD: revisa `spring.datasource.*` y que MySQL esté corriendo y accesible.
-- No llegan correos: instala Mailhog y configura `spring.mail.host=localhost` y `spring.mail.port=1025`.
+Esta guía te enseña a **pensar y codificar** como ingeniero software, paso a paso. El objetivo es que en tu próximo proyecto, no necesites ayuda de IA: entiendas **por qué** se hace cada cosa.
 
 ---
 
-## Arrancar con Docker 🐳
-A continuación tienes pasos concretos para ejecutar Maintree en contenedores Docker. Incluye un ejemplo de `Dockerfile` (multistage) y un `docker-compose.yml` para ejecutar la app junto con MySQL y Mailhog.
+## 🏛️ Parte 1: Arquitectura y Decisiones de Diseño
 
-### Opción A — Imagen multistage (construir + ejecutar)
-1) Crea un archivo `Dockerfile` en la raíz del proyecto con este contenido:
+### ¿Qué es Maintree?
 
-```dockerfile
-# Stage 1: build
-FROM maven:3.9.1-eclipse-temurin-21 AS build
-WORKDIR /app
-COPY pom.xml ./
-COPY src ./src
-RUN mvn -B -DskipTests package
+Un **sistema de gestión de usuarios** con autenticación y autorización. Permite:
+- Registro de usuarios
+- Login seguro con contraseñas hasheadas
+- Recuperación de contraseña por email
+- Panel de administración para gestionar usuarios y roles
 
-# Stage 2: runtime
-FROM eclipse-temurin:21-jre
-WORKDIR /app
-COPY --from=build /app/target/maintree-1.0-SNAPSHOT.jar app.jar
-EXPOSE 8081
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+**¿Por qué es importante entender esto?** Porque necesitas saber qué problema resuelves ANTES de escribir una línea de código.
+
+### Arquitectura por capas
+
+Maintree sigue el **patrón de capas** (Layers Pattern) — el más común en aplicaciones empresariales:
+
+```
+┌─────────────────────────────────────────┐
+│         PRESENTACIÓN (Frontend)         │
+│  HTML/CSS/JS - login.html, etc.         │
+└────────────────┬────────────────────────┘
+                 │ HTTP (JSON)
+┌────────────────▼────────────────────────┐
+│     CONTROLADORES (Controllers)         │
+│  LoginController, RegisterController    │
+│  - Reciben requests HTTP                │
+│  - Validan entrada                      │
+│  - Delegan al servicio                  │
+└────────────────┬────────────────────────┘
+                 │ Llamadas Java
+┌────────────────▼────────────────────────┐
+│    SERVICIOS (Services)                 │
+│  LoginService, RegisterService          │
+│  - Lógica de negocio                    │
+│  - Orquestación de datos                │
+│  - Decisiones del dominio               │
+└────────────────┬────────────────────────┘
+                 │
+┌────────────────▼────────────────────────┐
+│  REPOSITORIOS (Data Access Objects)     │
+│  UsuarioRepository                      │
+│  - Consultas a base de datos            │
+│  - Transformación de datos              │
+└────────────────┬────────────────────────┘
+                 │ SQL
+┌────────────────▼────────────────────────┐
+│     BASE DE DATOS (MySQL)               │
+│  Tablas: usuarios, roles, permisos      │
+└─────────────────────────────────────────┘
 ```
 
-2) Construir la imagen (desde la raíz del repo):
-```bash
-docker build -t maintree:latest .
+#### ¿Por qué separar en capas?
+
+| Beneficio | Razón |
+|-----------|-------|
+| **Mantenibilidad** | Si cambias la BD, solo toca Repository. Si cambias lógica, solo toca Service |
+| **Testabilidad** | Cada capa se prueba independientemente (inyección de dependencias) |
+| **Escalabilidad** | Fácil agregar features sin tocar código existente |
+| **Responsabilidad única** | Cada clase hace UNA cosa bien |
+
+---
+
+## 💾 Parte 2: Estructura de Datos y Base de Datos
+
+### Modelo conceptual
+
+```
+┌─────────────────┐         ┌─────────────┐
+│    USUARIO      │────────│     ROL     │
+├─────────────────┤   N:M  ├─────────────┤
+│ id (PK)         │         │ id (PK)     │
+│ nombre          │────────│ nombre      │
+│ apellido        │         │ descripción │
+│ email (UNIQUE)  │         └─────────────┘
+│ password (hash) │
+│ isActive        │         ┌──────────────┐
+│ resetToken      │────────│   PERMISO    │
+└─────────────────┘   1:N   ├──────────────┤
+                             │ id (PK)      │
+                             │ nombre       │
+                             │ descripción  │
+                             └──────────────┘
 ```
 
-3) Ejecutar localmente apuntando a una base de datos existente o usando parámetros por defecto:
-```bash
-docker run --rm -p 8081:8081 \
-  -e SPRING_DATASOURCE_URL=jdbc:mysql://host.docker.internal:3306/maintree \
-  -e SPRING_DATASOURCE_USERNAME=miusuario \
-  -e SPRING_DATASOURCE_PASSWORD=miclave \
-  maintree:latest
-```
-- Nota: en Windows/Mac usa `host.docker.internal` para acceder a servicios en la máquina host.
+### Tablas SQL
 
-### Opción B — Usar Docker Compose (MySQL + Mailhog + App)
-1) Crea `docker-compose.yml` en la raíz con este ejemplo:
-
-```yaml
-version: '3.8'
-services:
-  db:
-    image: mysql:8.0
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: maintree
-      MYSQL_USER: maintree
-      MYSQL_PASSWORD: secret
-    ports:
-      - "3306:3306"
-    volumes:
-      - db_data:/var/lib/mysql
-    healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  mailhog:
-    image: mailhog/mailhog
-    ports:
-      - "1025:1025"
-      - "8025:8025"
-
-  app:
-    build: .
-    image: maintree:latest
-    ports:
-      - "8081:8081"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/maintree
-      SPRING_DATASOURCE_USERNAME: maintree
-      SPRING_DATASOURCE_PASSWORD: secret
-      SPRING_MAIL_HOST: mailhog
-      SPRING_MAIL_PORT: 1025
-    depends_on:
-      - db
-      - mailhog
-
-volumes:
-  db_data:
+#### `usuarios`
+```sql
+CREATE TABLE usuarios (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100),
+    apellido VARCHAR(100),
+    email VARCHAR(100) UNIQUE NOT NULL,
+    especialidad VARCHAR(100),
+    password VARCHAR(255) NOT NULL,  -- Hash BCrypt (~60 chars)
+    isActive BOOLEAN DEFAULT FALSE,
+    reset_token VARCHAR(255) NULL,
+    reset_token_expiry DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
-2) Arrancar todo:
-```bash
-docker compose up -d --build
+**Decisiones:**
+- `email UNIQUE`: Cada usuario debe tener un email único
+- `password VARCHAR(255)`: BCrypt hash es largo (~60 chars), así que 255 es seguro
+- `isActive`: Track si el usuario fue aprobado por admin
+- `reset_token`: Para reseteo seguir de contraseña (temporal, debe expirar)
+
+#### `roles`
+```sql
+CREATE TABLE roles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100) UNIQUE NOT NULL,
+    descripcion TEXT
+);
 ```
-3) Comprobar estado y logs:
-```bash
-docker compose ps
-docker compose logs -f app
+
+#### `usuariorol` (Tabla de unión para relación N:M)
+```sql
+CREATE TABLE usuariorol (
+    usuario_id INT NOT NULL,
+    rol_id INT NOT NULL,
+    PRIMARY KEY (usuario_id, rol_id),
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+    FOREIGN KEY (rol_id) REFERENCES roles(id) ON DELETE CASCADE
+);
 ```
-4) Abrir en navegador:
-- App: http://localhost:8081
-- Mailhog UI (ver correos): http://localhost:8025
-
-### Notas y buenas prácticas
-- Variables de Spring Boot se pasan como variables de entorno: usa `SPRING_DATASOURCE_URL`, `SPRING_MAIL_HOST`, etc.
-- Si prefieres no reconstruir la imagen al cambiar código, usa `mvn -DskipTests package` y luego `docker compose up --no-build` o monta el JAR con un volumen en desarrollo.
-- Para producción: usa imágenes base más ligeras, agrega salud (healthchecks), límites de recursos y no habilites la creación automática de esquemas en `spring.jpa.hibernate.ddl-auto`.
 
 ---
 
+## 🔐 Parte 3: Seguridad — Lo Más Crítico
 
-## 1. Arquitectura y stack
-- **Spring Boot** con autoconfiguración (`@SpringBootApplication` en `MaintreeApplication` arranca todo).
-- **Capas**: Controller (expone API REST) → Service (reglas de negocio) → Repository (JPA) → Base de datos MySQL.
-- **Modelo**: entidades `Usuario`, `Rol`, `Permiso` con relaciones `@ManyToMany`.
-- **Seguridad**: Spring Security configurado en `config/SecurityConfig.java`; hash de contraseñas con BCrypt (`PasswordHasher`). No hay sesión/JWT: las respuestas son "success"/"roles" para el frontend.
-- **Correo**: `PasswordRecoveryService` usa `JavaMailSender` para reset de contraseña.
-- **Arch estáticos**: HTML/JS/CSS en `src/main/resources/static` servidos por `WebConfig`.
+### ¿Por qué no guardar contraseñas en texto plano?
 
-## 2. Configuración clave
-Revisa `src/main/resources/application.properties`:
-- BD: `spring.datasource.url`, `username`, `password`.
-- Mail: `spring.mail.host=localhost`, `spring.mail.port=1025` (Mailhog en local).
-- Seeder: `admin.create=true/false`, `admin.email`, `admin.password`.
-- Puerto: `server.port=8081`.
-
-`WebConfig`:
-- CORS abierto (`allowedOrigins "*"`). Buenas prácticas: limitar a tu dominio en producción.
-- Recursos estáticos sin caché (`setCachePeriod(0)`).
-
-## 3. Modelo de datos (JPA)
-### Usuario (`model/Usuario.java`)
-- Tabla `usuarios`, PK `id`.
-- Campos: `nombre`, `apellido`, `email` (único), `especialidad`, `password` (hash), `isActive` (Boolean), `resetToken`, `resetTokenExpiry`.
-- Relación **ManyToMany** con `Rol` vía tabla `usuariorol` (eager load).
-- Defaults: constructor marca `isActive = FALSE` y crea `roles = new HashSet<>()`.
-- Métodos `getIsActive()` y `setIsActive()` nunca devuelven/guardan null (evita NPEs). `getActive()` expone la propiedad como `active` para JSON.
-
-### Rol (`model/Rol.java`)
-- Tabla `rol`, campos `id`, `nombre` (único), `descripcion`.
-- ManyToMany con `Permiso` vía `rolpermiso` (eager). Útil para autorización futura.
-
-### Permiso (`model/Permiso.java`)
-- Tabla `permiso`, campos `id`, `nombre`, `descripcion`.
-
-> Tablas puente: `usuariorol` y `rolpermiso`. En SQL, JPA maneja inserts/joins automáticamente.
-
-## 4. Repositorios (DAO)
-- `UsuarioRepository extends JpaRepository<Usuario, Integer>`: métodos derivados `findByEmail`, `findByResetToken`, `findByIsActiveFalse`, `findByIsActiveFalseOrIsActiveIsNull`.
-- `RolRepository extends JpaRepository<Rol, Integer>`: `findByNombre`.
-
-## 5. Servicios (lógica de negocio)
-### LoginService
-- `validarCredenciales(email, password)`:
-  1) Busca usuario por email.
-  2) Verifica `isActive` (`Boolean.TRUE.equals(isActive)`).
-  3) Compara contraseña con BCrypt: 
-     ```java
-     boolean ok = BCrypt.checkpw(password, usuario.getPassword());
-     ```
-- Si algo falla, retorna `false` o propaga excepción.
-
-### RegisterService
-- `registerUser(newUser, rolNombre)`:
-  1) Valida email único (`findByEmail`).
-  2) Hashea password con `PasswordHasher.hashPassword`.
-  3) Marca `isActive=true` (registro auto-activo aquí; en aprobación se usa otro flujo).
-  4) Busca rol por nombre; si no existe, lanza `IllegalStateException`.
-  5) Asigna `Set<Rol>` y guarda.
-
-### PasswordRecoveryService
-- `initiatePasswordReset(email, requestUrl)`:
-  - Genera UUID token + expiry de 1h.
-  - Persiste token y fecha en usuario.
-  - Envía email con enlace `baseUrl/reset-password.html?token=...`.
-  - Si el email no existe, retorna false (pero no lanza error; comportamiento silencioso recomendado para no filtrar usuarios).
-- `finalizePasswordReset(token, newPassword)`:
-  - Busca usuario por token, valida expiry > ahora.
-  - Hashea nueva password, limpia token y expiry, guarda.
-
-### ApproveUsersService
-- `getPendingUsers()` devuelve usuarios con `isActive=false` o null.
-- `approveUsers(List<Integer>)` marca activos en lote.
-- `approveUserWithRole(id, rolNombre)` asigna rol existente y activa.
-- `rejectUser(id)` elimina (baja dura; podría ser lógica futura de soft-delete).
-
-### UsuarioService / RolService
-- Wrappers de repositorio. `RolService.asignarRolAUsuario` añade un rol si no lo tiene; `revocarRolDeUsuario` lo quita.
-
-## 6. Controladores (API REST)
-Todos bajo `/api` salvo admin (`/api/admin`). CORS abierto.
-
-### LoginController `/api/login`
-- Recibe JSON de `Usuario` (solo email/password).
-- Valida no-nulos. Llama `loginService.validarCredenciales`.
-- Si OK: arma mapa `{ success, message, roles, isAdmin }` (isAdmin se deriva si algún rol contiene "ADMIN").
-- Si falla: 401 con mensaje.
-
-### RegisterController `/api/register`
-- Recibe cuerpo como String, parsea con Gson (razón: esperan campos custom como `rol`).
-- Valida que `rol` venga presente.
-- Convierte a `Usuario` y llama `registerService.registerUser(newUser, rolNombre)`.
-- Respuestas: 201 éxito; 400 si datos inválidos; 409 si email duplicado; 500 si SQL error.
-
-### ForgotPasswordController `/api/forgot-password`
-- Recibe `Usuario` con email, usa `request.getRequestURL()` para construir baseUrl en el email.
-- Responde siempre 200 con mensaje genérico salvo error interno.
-
-### ResetPasswordController `/api/reset-password?token=...`
-- Valida `newPassword` y `confirmPassword` del body.
-- Reglas: no vacío, coincide, mínimo 8 chars.
-- Llama `recoveryService.finalizePasswordReset`; 200 si éxito, 400 si token inválido/expirado.
-
-### ApproveUsersController (admin) `/api/admin/*`
-- `GET /usuarios-pendientes`: lista pendientes.
-- `POST /confirmar-roles-lote`: activa varios IDs.
-- `POST /usuarios/{id}/aprobar` body `{ "rol": "..." }`: asigna rol y activa.
-- `DELETE /usuarios/{id}/rechazar`: borra usuario.
-
-### UsuarioController
-- `GET /usuarios`: lista usuarios; filtros opcionales `rol`, `especialidad`, `active` aplicados en memoria (stream). Mejora futura: mover a queries JPA.
-- `GET /usuarios/{id}`: busca por id.
-- `PUT /usuarios/{id}`: actualiza campos permitidos; si vienen roles, los resuelve por nombre vía `RolRepository`.
-- `DELETE /usuarios/{id}`: baja lógica (`isActive=false`).
-- `GET /especialidades`: devuelve lista distinta de especialidades existentes.
-
-### RolController
-- `GET /roles`: devuelve todos los roles.
-
-## 7. Seeder de administrador
-`AdminSeeder implements CommandLineRunner` se ejecuta al arrancar si `admin.create=true`:
-1) Crea rol `ADMIN` si falta.
-2) Crea usuario `admin@local` con `AdminPass123!` si no existe; si existe, asegura que esté activo y con rol ADMIN.
-
-Buenas prácticas: desactivar en producción (`admin.create=false`) o protegerlo con perfil `dev`.
-
-## 8. Utilidades
-- `PasswordHasher`: wrappers estáticos de BCrypt (hashpw, checkpw).
-- `PasswordHashingManual.java` y `DatabaseConnection.java`: están vacíos (stubs). Se pueden eliminar o completar; hoy no aportan funcionalidad.
-
-## 9. Flujo extremo a extremo (ejemplos)
-### Registro → login
-1) POST `/api/register` body ejemplo:
-   ```json
-   {
-     "nombre":"Ana",
-     "apellido":"Lopez",
-     "email":"ana@example.com",
-     "password":"Secreta123",
-     "rol":"Supervisor",
-     "especialidad":"Electrico"
-   }
-   ```
-2) Servicio hashea password y guarda usuario + rol.
-3) POST `/api/login` con email/password → valida activo + BCrypt → responde roles e `isAdmin`.
-
-### Recuperar contraseña
-1) POST `/api/forgot-password` con `{ "email":"ana@example.com" }` → genera token y envía link.
-2) Usuario abre `reset-password.html?token=...`, envía POST `/api/reset-password?token=...` con `{ "newPassword":"NuevaClave123", "confirmPassword":"NuevaClave123" }`.
-3) Servicio valida token no expirado, hashea nueva clave, limpia token.
-
-### Aprobación de usuarios (admin)
-- UI `user-admin.html` consume `/api/admin/usuarios-pendientes` para mostrar pendientes.
-- Admin aprueba: `POST /api/admin/usuarios/{id}/aprobar` body `{ "rol":"ADMIN" }` o rol deseado.
-- Lote: `POST /api/admin/confirmar-roles-lote` con `[1,2,3]` activa esos IDs.
-
-## 10. Buenas prácticas aplicadas y pendientes
-Aplicadas:
-- Hash de contraseñas con BCrypt; nunca se guardan en claro.
-- Null-safety en `isActive` (evita NPEs) y setters defensivos.
-- Respuestas coherentes con `success/message` para el frontend.
-- Eager fetch de roles para que `login` pueda responder rápido con roles.
-
-Pendientes/mejorables:
-1) **Autenticación/Autorización**: agregar Spring Security + JWT/sesión; validar roles en endpoints admin.
-2) **Validación de entrada**: usar `@Valid` y DTOs en lugar de `Usuario` directo; sanitizar strings.
-3) **CORS**: restringir orígenes en prod.
-4) **Consultas filtradas**: mover filtros de `UsuarioController` a queries en `UsuarioRepository` para eficiencia.
-5) **Manejo de errores**: crear `@ControllerAdvice` con respuestas unificadas.
-6) **Seeder**: activarlo solo en `dev` con `@Profile("dev")` y desactivar en prod.
-7) **Permisos**: hoy solo roles; implementar permisos granulares usando entidad `Permiso`.
-8) **Archivos estáticos**: habilitar caché en prod (`setCachePeriod` > 0) y versionado de assets.
-
-## 11. Teoría rápida detrás de cada concepto
-- **BCrypt**: función de hash adaptativa; incluye salt aleatorio y work factor. Comparar con `BCrypt.checkpw(plain, hash)`.
-- **ManyToMany**: JPA crea tabla intermedia; `fetch = EAGER` trae roles/permisos junto al usuario (útil para login pero puede pesar; en prod considerar `LAZY`).
-- **CommandLineRunner**: interfaz que ejecuta código al inicio; usada para el seeder.
-- **JavaMailSender**: abstracción de Spring para enviar correo SMTP; `MimeMessageHelper` facilita contenido HTML.
-- **ResponseEntity**: permite controlar status HTTP + body; usarlo mejora semántica de respuestas.
-
-## 12. Rutas front relevantes
-- `login.html`: login.
-- `register.html`: registro.
-- `reset-password.html`, `recuperar.html`: flujos de password.
-- `user-admin.html`, `RoleAssign.html`: panel admin y asignación.
-
----
-Con esto tienes una vista completa del proyecto. A continuación se añade una versión ampliada y didáctica (arquitectura, seguridad, ejemplos prácticos y comandos) para que puedas aprender paso a paso:
-
----
-
-# Aprende Maintree — Guía ampliada y explicada paso a paso
-
-Esta guía está pensada como material de aprendizaje: incluye explicaciones de diseño, por qué se eligieron ciertas soluciones, y ejemplos concretos para que puedas ejecutar y modificar el proyecto con seguridad.
-
-## 0. Objetivo de esta guía
-- Entender la arquitectura y las responsabilidades de cada capa.
-- Conocer las decisiones de diseño (por qué) y ver ejemplos prácticos.
-- Saber cómo probar y depurar funcionalidades principales (login, registro, recuperación, admin).
-
----
-## 1. Arquitectura y stack (visión ampliada)
-- **Spring Boot (3.x)**: provee autoconfiguración, servidor embebido, y facilidad para integrar Web, JPA, Mail y Security.
-- **Capas y responsabilidades**:
-  - Controller: orquesta peticiones HTTP y respuestas (validación básica, mapping DTO ↔ entidad).
-  - Service: contenedor de reglas de negocio y transacciones.
-  - Repository: abstracción de acceso a datos (JPA).
-  - Model: clases JPA que representan la base de datos.
-- **Separación de capas**: facilita pruebas unitarias y mantenimiento.
-
----
-## 2. Configuración (qué hace cada propiedad importante)
-Archivo: `src/main/resources/application.properties`
-- `spring.datasource.*`: conecta la app a la base de datos (host, credentials). Si cambias esto apuntas a otra BD.
-- `spring.jpa.hibernate.ddl-auto=update`: en dev actualiza el esquema; en prod usar migraciones controladas (Flyway/Liquibase).
-- `spring.mail.*`: configura envío de email (Mailhog en local para pruebas).
-- `admin.create`, `admin.email`, `admin.password`: variables para el seeder de administrador en desarrollo.
-- `server.port`: puerto de la aplicación (en este repo 8081 por defecto).
-
-`WebConfig` (CORS y recursos estáticos):
-- `allowedOrigins("*")` simplifica pruebas locales, pero en producción debes limitar a dominios de confianza.
-- `setCachePeriod(0)` evita cache en desarrollo; en producción asigna tiempo mayor para rendimiento.
-
----
-## 3. Modelo de datos — explicación práctica
-### Entidad Usuario
-- Campos críticos:
-  - `email` (único): sirve como identificador para login.
-  - `password`: se guarda como hash (BCrypt).
-  - `isActive`: control de estado (registro activo o pendiente).
-  - `resetToken` y `resetTokenExpiry`: para recuperación de contraseña.
-- Diseño: usar getters/setters que eviten nulls para prevenir NullPointerException.
-
-### Entidad Rol
-- Roles como `ADMIN`, `CLIENTE` otorgan accesos distintos. Se usan para mapear a `GrantedAuthority` en Spring Security.
-
-¿Por qué `ManyToMany` con `EAGER`?
-- Facilita obtener roles al autenticar (no necesitas una query adicional). En apps más grandes convendría `LAZY` y una consulta específica para rendimiento.
-
----
-## 4. Repositorios (cómo sacas ventaja)
-- Extender `JpaRepository` proporciona CRUD, paginación y queries derivadas sin escribir SQL.
-- Ejemplo: `UsuarioRepository.findByEmail(email)` crea la consulta automáticamente.
-- Cuando necesites consultas complejas: usa `@Query` o `Criteria`.
-
----
-## 5. Servicios — responsabilidad y ejemplos
-### LoginService
-- Lógica: buscar usuario, verificar `isActive`, comparar password con BCrypt.
-- Por qué en servicio: desacopla la validación de credenciales del controller (más testable).
-
-### RegisterService
-- Validaciones: email único y existencia de rol.
-- Hasheo de contraseña: hace `passwordEncoder.encode(rawPassword)` (BCrypt).
-- Ejemplo de código:
+❌ **MAL** (NUNCA):
 ```java
-String hashed = passwordEncoder.encode(newUser.getPassword());
-newUser.setPassword(hashed);
-usuarioRepository.save(newUser);
+usuarios.put(email, password);  // ¡Desastre de seguridad!
 ```
 
-### PasswordRecoveryService
-- Genera token (UUID) con expiry; envía correo con link seguro.
-- Buenas prácticas: no revelar si el email existe; responder mensaje genérico.
-
----
-## 6. API (controladores) — ejemplos y razones
-- Controllers validan la entrada y devuelven `ResponseEntity` con status apropiado.
-- Usar DTOs y `@Valid` evita exponer entidades directamente.
-
-Ejemplo: `ForgotPasswordController` (DTO + `@Valid`)
+✅ **BIEN**:
 ```java
-@PostMapping("/forgot-password")
-public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest dto) {
-  recoveryService.initiatePasswordReset(dto.getEmail(), requestUrl);
-  return ResponseEntity.ok(Map.of("success", true, "message", "Si tu correo está registrado..."));
-}
+String hashedPassword = passwordEncoder.encode(password);  // BCrypt con salt
+usuarios.put(email, hashedPassword);
 ```
 
----
-## 7. Seguridad: implementación y explicación línea a línea
-Objetivo: autenticar usuarios, almacenar su sesión (o emitir token) y autorizar accesos por rol.
+### BCrypt: Hash con Salt
 
-1) Dependencia: `spring-boot-starter-security`.
+**BCrypt** es el estándar para contraseñas. ¿Por qué?
 
-2) `SecurityConfig.java` — decisiones clave:
-- `PasswordEncoder` (BCrypt): para encriptar contraseñas al registrar usuarios.
-- Definir rutas públicas (`/api/login`, `/api/register`, `/api/forgot-password`).
-- Proteger rutas admin con `hasRole("ADMIN")`.
-- Habilitar `@EnableMethodSecurity` para usar `@PreAuthorize` en métodos.
+1. **Salt automático**: Cada hash incluye un salt único → mismo password, hashes diferentes
+2. **Función lenta**: Tardanza deliberada (por defecto, rounds=10) → imposible fuerza bruta
+3. **Verificación segura**: `BCrypt.checkpw(plaintext, hash)` compara sin hasher el plaintext
 
-Fragmento y explicación:
 ```java
-http.csrf(csrf -> csrf.disable())
-  .authorizeHttpRequests(auth -> auth
-    .requestMatchers("/api/login","/api/register","/api/forgot-password").permitAll()
-    .requestMatchers("/api/admin/**").hasRole("ADMIN")
-    .anyRequest().authenticated()
-  )
-  .httpBasic();
-```
-- `csrf.disable()` se usa para APIs REST; si tienes formularios HTML en el servidor, habilita CSRF y añade token en formularios.
-
-3) `CustomUserDetailsService`:
-- Convierte `Usuario` + `Rol` → `UserDetails` + `GrantedAuthority`.
-- Lanza `UsernameNotFoundException` si no encuentra usuario o no esta activo.
-
-4) Login manual (opción del proyecto):
-- `LoginController` valida credenciales (LoginService) y si son correctas crea un `Authentication` y lo guarda en `SecurityContext` y en la sesión (para que MockMvc y navegadores mantengan sesión).
-- Alternativa: delegar a `UsernamePasswordAuthenticationFilter` y `formLogin()` de Spring Security.
-
-¿Por qué este enfoque?
-- Mantiene compatibilidad con el frontend actual y te da control total del formato de respuesta (roles, isAdmin, etc.).
-
----
-## 8. Tests (práctico)
-- Tests de integración con `MockMvc` prueban:
-  - Endpoints requieren auth (401 sin sesión).
-  - Login produce sesión válida y permite acceso a rutas protegidas.
-  - Roles (ADMIN/CLIENTE) resultan en accesos permitidos/denegados.
-
-Ejecutar tests:
-```bash
-mvn -Dtest=SecurityIntegrationTest test
-```
-
----
-## 9. Comandos y ejemplos prácticos (rápido para probar)
-- Compilar: `mvn -DskipTests package`
-- Ejecutar app: `mvn spring-boot:run`
-- Login (curl):
-```bash
-curl -i -X POST http://localhost:8081/api/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@local","password":"AdminPass123!"}'
-```
-- Usar la cookie `JSESSIONID` para llamadas autenticadas:
-```bash
-curl -i -X GET http://localhost:8081/api/usuarios --cookie "JSESSIONID=<valor>"
-```
-- Forgot password:
-```bash
-curl -i -X POST http://localhost:8081/api/forgot-password -H "Content-Type: application/json" -d '{"email":"ana@example.com"}'
-```
-
----
-## 10. Buenas prácticas y próximos pasos (prioritarios)
-1. Habilitar CSRF para formularios y tokens en front si se usan formularios stateful.
-2. Forzar HTTPS y marcar cookies como `Secure` y `HttpOnly`.
-3. Limitar sesiones por usuario (1 sesión activa) si se desea control de sesiones.
-4. Migrar filtros a consultas JPA para eficiencia (paginación, índices DB).
-5. Considerar JWT si migras a SPA con backend stateless.
-6. Añadir `@ControllerAdvice` para manejo centralizado de errores.
-
----
-## 11. Recursos para seguir aprendiendo
-- Documentación Spring Boot: https://spring.io/projects/spring-boot
-- Spring Security: https://spring.io/projects/spring-security
-- BCrypt / jBCrypt: entender salt y cost (work factor)
-- JPA & Hibernate: mapeo, cache y estrategias de fetch
-
----
-He ampliado la guía con ejemplos prácticos, explicación línea a línea y una sección de errores comunes. Más abajo encontrarás detalles: ejemplos cURL con respuestas, un diagrama ASCII simple de la arquitectura, y una sección de "Errores comunes" con pasos concretos para resolverlos.
-
----
-
-## ✅ Ejemplos cURL detallados (peticiones y respuestas esperadas)
-A continuación hay ejemplos reales que puedes ejecutar desde la terminal. Ajusta `PORT` si cambias `server.port`.
-
-### 1) Login (POST /api/login)
-Request:
-```bash
-curl -i -X POST http://localhost:8081/api/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@local","password":"AdminPass123!"}'
-```
-Respuesta (éxito, 200):
-```json
-{
-  "success": true,
-  "message": "Login correcto",
-  "roles": ["ADMIN"],
-  "isAdmin": true
-}
-```
-Si credenciales inválidas -> 401 con `{ "success": false, "message": "Credenciales inválidas" }`.
-
-### 2) Registro (POST /api/register)
-Request:
-```bash
-curl -i -X POST http://localhost:8081/api/register \
-  -H "Content-Type: application/json" \
-  -d '{"nombre":"Ana","apellido":"Lopez","email":"ana@example.com","password":"Secreta123","rol":"CLIENTE","especialidad":"Electrico"}'
-```
-Respuesta (éxito, 201):
-```json
-{ "success": true, "message": "Usuario registrado" }
-```
-Si email duplicado -> 409 con `{ "success": false, "message": "El correo ya existe" }`.
-
-### 3) Forgot Password (POST /api/forgot-password)
-Request:
-```bash
-curl -i -X POST http://localhost:8081/api/forgot-password \
-  -H "Content-Type: application/json" \
-  -d '{"email":"ana@example.com"}'
-```
-Respuesta (siempre 200 para no filtrar usuarios):
-```json
-{ "success": true, "message": "Si el correo existe, recibirás un email con instrucciones" }
-```
-
-### 4) Reset Password (POST /api/reset-password?token=...)
-Request:
-```bash
-curl -i -X POST "http://localhost:8081/api/reset-password?token=<TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"newPassword":"NuevaClave123","confirmPassword":"NuevaClave123"}'
-```
-Respuesta (éxito): 200 `{ "success": true, "message": "Contraseña actualizada" }`
-
----
-
-## 🧭 Diagrama simple de la arquitectura (ASCII)
-```
-Client (browser/JS)
-    |
-   HTTP
-    v
-Controllers (REST)  ---> Services ---> Repositories (JPA) ---> MySQL
-    |                  ^
-    |                  |
-   Static assets       +-- Utilities (Password hashing, Email sender)
-```
-
----
-
-## 🔍 Explicación línea a línea — fragmentos importantes
-A continuación explico fragmentos clave del código y por qué están así.
-
-### SecurityConfig (resumen clave)
-```java
+// Spring Security proporciona BCryptPasswordEncoder:
 @Bean
 public PasswordEncoder passwordEncoder() {
-  return new BCryptPasswordEncoder();
+    return new BCryptPasswordEncoder();  // rounds=10 por defecto
+}
+
+// Guardar:
+String hashedPassword = passwordEncoder.encode("MiPassword123");
+// Resultado: $2a$10$... (63 chars, incluye salt + hash)
+
+// Verificar:
+boolean valido = passwordEncoder.matches("MiPassword123", hashedPassword);
+```
+
+### Spring Security: Control de Acceso
+
+Spring Security maneja **autenticación** (¿quién eres?) y **autorización** (¿qué puedes hacer?):
+
+```java
+@Configuration
+@EnableMethodSecurity
+public class SecurityConfig {
+    
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf(csrf -> csrf.disable())  // Para APIs REST
+            .authorizeHttpRequests(auth -> auth
+                // Públicas (sin autenticación)
+                .requestMatchers("/api/login", "/api/register").permitAll()
+                // Solo ADMIN
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                // Cualquier cosa autenticada
+                .anyRequest().authenticated()
+            )
+            .httpBasic(Customizer.withDefaults());
+        return http.build();
+    }
 }
 ```
-- `PasswordEncoder`: proporciona un wrapper para encriptar contraseñas. BCrypt añade salt y permite ajustar el coste.
+
+**Explícito línea a línea:**
+- `.authorizeHttpRequests()`: Define qué endpoint necesita qué
+- `permitAll()`: Sin autenticación
+- `hasRole("ADMIN")`: Solo usuarios con rol ADMIN
+- `authenticated()`: Requiere ser autenticado (cualquier usuario válido)
+
+---
+
+## 🎯 Parte 4: Implementación por Capas
+
+### 4.1 CAPA MODELO (Entity/Domain)
+
+El modelo representa la **realidad del negocio** en código:
 
 ```java
-http.csrf(csrf -> csrf.disable())
-  .authorizeHttpRequests(auth -> auth
-    .requestMatchers("/api/login","/api/register","/api/forgot-password").permitAll()
-    .requestMatchers("/api/admin/**").hasRole("ADMIN")
-    .anyRequest().authenticated()
-  )
-  .httpBasic();
-```
-- `csrf.disable()`: útil para APIs REST; si usas formularios protegidos por el servidor activa CSRF.
-- `permitAll()`: rutas públicas.
-- `hasRole("ADMIN")`: protege rutas admin. Spring espera roles sin prefijo `ROLE_` al usar `hasRole`.
-
-### LoginController — flujo básico
-```java
-if (loginService.validarCredenciales(email, password)) {
-  Authentication auth = new UsernamePasswordAuthenticationToken(email, null, authorities);
-  SecurityContextHolder.getContext().setAuthentication(auth);
-  request.getSession().setAttribute("SPRING_SECURITY_CONTEXT", SecurityContextHolder.getContext());
-  return ResponseEntity.ok(Map.of("success", true, "roles", roles));
+@Entity
+@Table(name = "usuarios")
+public class Usuario {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private int id;  // Auto-increment por BD
+    
+    @Column(name = "email", unique = true, nullable = false)
+    private String email;  // UNIQUE en BD
+    
+    @Column(name = "password", nullable = false)
+    private String password;  // Hash BCrypt
+    
+    @Column(name = "isActive")
+    private Boolean isActive;  // Requiere aprobación admin
+    
+    // OJO: Relación N:M
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+        name = "usuariorol",
+        joinColumns = @JoinColumn(name = "usuario_id"),
+        inverseJoinColumns = @JoinColumn(name = "rol_id")
+    )
+    private Set<Rol> roles = new HashSet<>();
+    
+    public Usuario() {
+        this.roles = new HashSet<>();
+        this.isActive = false;  // Default: no activo hasta que admin apruebe
+    }
+    
+    // Getters y setters...
 }
 ```
-- Se genera un `Authentication` y se guarda en `SecurityContext`. Luego se persiste en la sesión HTTP para compatibilidad con sesiones stateful (útil para MockMvc y UI basada en cookies).
 
-### RegisterService — pasos críticos
+**Decisiones importantes:**
+- `@Entity`: Marca que esta clase se mapea a una tabla (ORM = Object-Relational Mapping)
+- `@ManyToMany`: Un usuario puede tener múltiples roles, un rol múltiples usuarios
+- `FetchType.EAGER`: Trae roles inmediatamente al cargar usuario (vs. LAZY = bajo demanda)
+- `HashSet<Rol>`: Evita duplicados automáticamente
+
+### 4.2 CAPA ACCESO A DATOS (Repository/DAO)
+
+Responsable SOLO de consultas y transformación de datos:
+
 ```java
-if (usuarioRepository.findByEmail(newUser.getEmail()) != null) throw new IllegalStateException(...);
-String hashed = passwordEncoder.encode(newUser.getPassword());
-newUser.setPassword(hashed);
-newUser.setActive(true);
-Rol selected = rolRepository.findByNombre(rolNombre);
-if (selected == null) throw new IllegalStateException(...);
-usuarioRepository.save(newUser);
+@Repository  // Spring la reconoce como bean
+public interface UsuarioRepository extends JpaRepository<Usuario, Integer> {
+    
+    // Spring genera la SQL automáticamente del nombre del método:
+    Usuario findByEmail(String email);  // SELECT * FROM usuarios WHERE email = ?
+    
+    // Búsqueda más compleja:
+    @Query("SELECT u FROM Usuario u WHERE u.isActive = true")
+    List<Usuario> findAllActive();
+}
 ```
-- Verificación de email único evita duplicados.
-- `passwordEncoder.encode` hace el hash seguro.
-- Validación del rol evita asignar roles inexistentes.
+
+**Sin Spring Data JPA**, tendrías que escribir:
+```java
+// ❌ Viejo estilo (JDBC):
+String sql = "SELECT * FROM usuarios WHERE email = ?";
+PreparedStatement stmt = connection.prepareStatement(sql);
+stmt.setString(1, email);
+ResultSet rs = stmt.executeQuery();
+// ... mapear ResultSet a objeto Usuario manualmente
+```
+
+**Con Spring Data JPA** ✅:
+```java
+Usuario usuario = usuarioRepository.findByEmail(email);  // Una línea!
+```
+
+### 4.3 CAPA SERVICIO (Business Logic)
+
+Aquí vive la **lógica de negocio** — decisiones del dominio:
+
+```java
+@Service  // Spring bean
+public class LoginService {
+    
+    @Autowired
+    private UsuarioRepository usuarioRepository;
+    
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+    
+    /**
+     * Valida credenciales de un usuario.
+     * 
+     * Lógica de negocio:
+     * 1. ¿Existe el usuario?
+     * 2. ¿La contraseña es correcta?
+     * 3. ¿El usuario está activo (aprobado por admin)?
+     */
+    public boolean validarCredenciales(String email, String password) {
+        Usuario usuario = usuarioRepository.findByEmail(email);
+        
+        // Validación 1: Existe
+        if (usuario == null) {
+            return false;
+        }
+        
+        // Validación 2: Contraseña correcta
+        boolean passwordValida = passwordEncoder.matches(password, usuario.getPassword());
+        if (!passwordValida) {
+            return false;
+        }
+        
+        // Validación 3: Usuario activo
+        if (!usuario.getIsActive()) {
+            return false;  // Admin aún no lo aprobó
+        }
+        
+        return true;
+    }
+}
+```
+
+**¿Por qué aquí y no en Controller?**
+- **Testeable**: Pruebas inyectando mock de Repository
+- **Reutilizable**: Si hay otro cliente (CLI, API diferente), reutilizas la lógica
+- **Mantenible**: Si cambia la lógica, cambias SIN afectar presentation layer
+
+### 4.4 CAPA CONTROLADOR (REST API)
+
+Responsable de:
+1. Recibir requests HTTP
+2. Validar entrada (¿el JSON es válido?)
+3. Delegar al servicio
+4. Formatear respuesta
+
+```java
+@RestController  // API REST (vs @Controller para views HTML)
+@RequestMapping("/api")
+@CrossOrigin(origins = "*")  // CORS para frontend
+public class LoginController {
+    
+    @Autowired
+    private LoginService loginService;
+    
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@RequestBody Usuario usuario) {
+        try {
+            // Validar entrada
+            if (usuario.getEmail() == null || usuario.getPassword() == null) {
+                return ResponseEntity.badRequest().body(
+                    Map.of("success", false, "message", "Email y password requeridos")
+                );
+            }
+            
+            // Delegar al servicio
+            boolean valido = loginService.validarCredenciales(
+                usuario.getEmail(), 
+                usuario.getPassword()
+            );
+            
+            if (valido) {
+                // Respuesta de éxito
+                return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Login exitoso",
+                    "roles", usuario.getRoles().stream()
+                        .map(Rol::getNombre)
+                        .toList()
+                ));
+            } else {
+                // Respuesta de error
+                return ResponseEntity.status(401).body(Map.of(
+                    "success", false,
+                    "message", "Credenciales inválidas"
+                ));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(
+                "success", false,
+                "message", "Error interno: " + e.getMessage()
+            ));
+        }
+    }
+}
+```
+
+**Responsabilidades:**
+- ✅ Parsear request
+- ✅ Validar entrada
+- ✅ Llamar servicio
+- ✅ Formatear respuesta
+- ❌ NO hacer lógica de negocio
 
 ---
 
-## 🚨 Errores comunes y cómo resolverlos (con ejemplos reales del proyecto)
-1) NullPointerException en tests: `this.usuarioRepository` null
-   - Causa: el servicio usaba inyección por campos y las pruebas usaban Mockito sin inyectar dependencias correctamente.
-   - Solución: usar inyección por constructor en `RegisterService` y `@InjectMocks` en pruebas o inicializar con `new RegisterService(...)`.
-2) `rawPassword cannot be null` al hashear
-   - Causa: el test creó un `Usuario` sin `password` antes de llamar al método que la hashea.
-   - Solución: en el test setear `newUser.setPassword("pw")` o validar inputs antes de hashear.
-3) MockMvc y sesión no persistida
-   - Causa: al autenticar manualmente no se guardó SecurityContext en session.
-   - Solución: `request.getSession().setAttribute("SPRING_SECURITY_CONTEXT", SecurityContextHolder.getContext());` o utilizar `formLogin()` de Spring Security en tests.
+## 🧪 Parte 5: Testing — Cómo Validar tu Código
+
+### ¿Por qué tests?
+
+Imagina que cambiaste la lógica de login. ¿Cómo sabes que no rompiste nada?
+- ❌ Clickeando manualmente: Lento, error-prone, no escala
+- ✅ Tests automáticos: Rápido, confiable, se integra en CI/CD
+
+### Tipos de tests
+
+| Tipo | Scope | Velocidad | Dependencias |
+|------|-------|-----------|--------------|
+| **Unitario** | Una clase/método | Muy rápido | Mock de dependencias |
+| **Integración** | Service + Repository + BD | Rápido | BD en memoria (H2) |
+| **E2E (End-to-End)** | API + Frontend + BD real | Lento | Servidor real |
+
+### Test Unitario: LoginService
+
+```java
+@RunWith(MockitoJUnitRunner.class)  // Spring crea mocks automáticamente
+public class LoginServiceTest {
+    
+    @Mock
+    private UsuarioRepository usuarioRepository;  // Mock = simulado
+    
+    @Mock
+    private PasswordEncoder passwordEncoder;
+    
+    @InjectMocks  // Inyecta los mocks en el servicio
+    private LoginService loginService;
+    
+    @Test
+    public void debeRetornarFalsoSiUsuarioNoExiste() {
+        // Arrange (preparar): Mockear que no existe usuario
+        when(usuarioRepository.findByEmail("no@existe.com")).thenReturn(null);
+        
+        // Act (actuar): Llamar el método
+        boolean resultado = loginService.validarCredenciales("no@existe.com", "pass");
+        
+        // Assert (afirmar): Validar resultado
+        assertFalse(resultado);
+    }
+    
+    @Test
+    public void debeRetornarFalsoSiContraseñaIncorrecta() {
+        // Arrange
+        Usuario usuarioMock = new Usuario();
+        usuarioMock.setEmail("user@example.com");
+        usuarioMock.setPassword("$2a$10$hashedPassword123");  // Hash BCrypt
+        usuarioMock.setIsActive(true);
+        
+        when(usuarioRepository.findByEmail("user@example.com")).thenReturn(usuarioMock);
+        when(passwordEncoder.matches("contraseniaIncorrecta", usuarioMock.getPassword()))
+            .thenReturn(false);  // Mockear que no coincide
+        
+        // Act
+        boolean resultado = loginService.validarCredenciales("user@example.com", "contraseniaIncorrecta");
+        
+        // Assert
+        assertFalse(resultado);
+    }
+    
+    @Test
+    public void debeRetornarTruoSiCredencialesCorrectas() {
+        // Arrange
+        Usuario usuarioMock = new Usuario();
+        usuarioMock.setEmail("admin@local");
+        usuarioMock.setPassword("$2a$10$hashedPassword123");
+        usuarioMock.setIsActive(true);
+        
+        when(usuarioRepository.findByEmail("admin@local")).thenReturn(usuarioMock);
+        when(passwordEncoder.matches("AdminPass123!", usuarioMock.getPassword()))
+            .thenReturn(true);
+        
+        // Act
+        boolean resultado = loginService.validarCredenciales("admin@local", "AdminPass123!");
+        
+        // Assert
+        assertTrue(resultado);
+    }
+}
+```
+
+### Test de Integración: LoginController
+
+```java
+@SpringBootTest
+@AutoConfigureMockMvc  // Simula requests HTTP sin servidor real
+public class LoginIntegrationTest {
+    
+    @Autowired
+    private MockMvc mockMvc;  // Cliente HTTP simulado
+    
+    @Autowired
+    private UsuarioRepository usuarioRepository;
+    
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+    
+    @BeforeEach
+    public void setup() {
+        // Crear usuario de test en BD
+        Usuario usuario = new Usuario();
+        usuario.setEmail("test@example.com");
+        usuario.setPassword(passwordEncoder.encode("TestPass123!"));
+        usuario.setIsActive(true);
+        usuarioRepository.save(usuario);
+    }
+    
+    @Test
+    public void loginDebeRetornarSuccessTrueConCredencialesValidas() throws Exception {
+        mockMvc.perform(post("/api/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"email\":\"test@example.com\",\"password\":\"TestPass123!\"}")
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.message").value("Inicio de sesión correcto"));
+    }
+    
+    @Test
+    public void loginDebeRetornarFalsoConCredencialesInvalidas() throws Exception {
+        mockMvc.perform(post("/api/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"email\":\"test@example.com\",\"password\":\"WrongPassword\"}")
+        )
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.success").value(false));
+    }
+}
+```
+
+**Cómo ejecutar:**
+```bash
+mvn test                                    # Todos los tests
+mvn -Dtest=LoginServiceTest test            # Solo LoginServiceTest
+mvn -Dtest=LoginServiceTest#debeRetorna* test  # Solo test específico
+```
 
 ---
 
-## ✅ Resumen y próximos pasos sugeridos
-- Lee la sección "Explicación línea a línea" para entender por qué cada elección fue tomada.
-- Ejecuta los ejemplos cURL para ver las respuestas reales y practicar.
-- Si quieres, puedo agregar ejemplos de `@WebMvcTest` y plantillas de pruebas unitarias adicionales.
+## 🛠️ Parte 6: Flujos Completos — De Idea a Código
+
+### Flujo 1: Registro de Usuario
+
+```
+Frontend (register.html)
+    ↓
+POST /api/register con {nombre, apellido, email, password, especialidad}
+    ↓
+RegisterController.register()
+    ├─ Validar que email no exista (Repository.findByEmail)
+    ├─ Hashear contraseña (PasswordEncoder)
+    ├─ Crear usuario inactivo (isActive=false)
+    └─ Guardar en BD (Repository.save)
+    ↓
+Response: {"success": true, "message": "Registro exitoso. Espera aprobación"} (201 Created)
+```
+
+**Código que escribirías:**
+
+```java
+// RegisterService
+@Service
+public class RegisterService {
+    
+    @Autowired
+    private UsuarioRepository usuarioRepository;
+    
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+    
+    public Usuario registrar(Usuario nuevoUsuario) throws Exception {
+        // Validación 1: Email único
+        if (usuarioRepository.findByEmail(nuevoUsuario.getEmail()) != null) {
+            throw new Exception("Email ya registrado");
+        }
+        
+        // Validación 2: Contraseña válida
+        if (nuevoUsuario.getPassword() == null || nuevoUsuario.getPassword().length() < 8) {
+            throw new Exception("Contraseña debe tener mínimo 8 caracteres");
+        }
+        
+        // Crear usuario
+        nuevoUsuario.setPassword(passwordEncoder.encode(nuevoUsuario.getPassword()));
+        nuevoUsuario.setIsActive(false);  // Requiere aprobación admin
+        
+        return usuarioRepository.save(nuevoUsuario);
+    }
+}
+
+// RegisterController
+@RestController
+@RequestMapping("/api")
+public class RegisterController {
+    
+    @Autowired
+    private RegisterService registerService;
+    
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@RequestBody Usuario usuario) {
+        try {
+            Usuario registrado = registerService.registrar(usuario);
+            return ResponseEntity.status(201).body(Map.of(
+                "success", true,
+                "message", "Registro exitoso. Un administrador debe aprobar tu cuenta."
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", "Error en registro: " + e.getMessage()
+            ));
+        }
+    }
+}
+```
+
+### Flujo 2: Recuperación de Contraseña
+
+```
+Frontend (btn "¿Olvidaste tu contraseña?")
+    ↓
+POST /api/forgot-password con {email}
+    ↓
+ForgotPasswordService
+    ├─ Buscar usuario por email
+    ├─ Generar token aleatorio temporal (UUID)
+    ├─ Guardar token + expiry (30 min desde ahora) en BD
+    ├─ Enviar email con link: /reset-password.html?token=...
+    └─ Response: "Email enviado"
+    ↓
+Usuario hace click en email → Llena nuevo password
+    ↓
+POST /api/reset-password con {token, newPassword}
+    ↓
+ResetPasswordService
+    ├─ Buscar usuario por token
+    ├─ Validar token no expirado
+    ├─ Hashear nueva contraseña
+    ├─ Guardar contraseña nueva
+    ├─ Borrar token
+    └─ Response: "Contraseña actualizada"
+```
 
 ---
 
-¿Quieres que además incluya ejemplos de `@WebMvcTest` y plantillas de tests para `PasswordRecoveryService` y `CustomUserDetailsService`? Puedo agregarlos inmediatamente.
+## 🚀 Parte 7: Stack Tecnológico — ¿Por Qué Esta Combinación?
 
+| Tecnología | Por qué | Alternativa |
+|-----------|--------|---------|
+| **Spring Boot** | Framework estándar industria, productivo, comunidad enorme | Quarkus, Micronaut |
+| **JPA/Hibernate** | ORM estándar para Java, maneja SQL automáticamente | MyBatis, jOOQ |
+| **Spring Security** | Autenticación/autorización battle-tested, integración perfecta con Spring | Apache Shiro, Auth0 |
+| **MySQL** | BD relacional estable, ampliamente soportada | PostgreSQL, MariaDB |
+| **Maven** | Build tool estándar, gestión de dependencias | Gradle |
+| **JUnit + Mockito** | Testing estándar Java | TestNG, AssertJ |
+
+---
+
+## 📋 Parte 8: Checklist para tu Próximo Proyecto
+
+Cuando hagas el próximo proyecto SIN ayuda de IA, verifica:
+
+### Análisis
+- [ ] ¿Entiendo el problema de negocio?
+- [ ] ¿Definí mi modelo de datos (entidades, relaciones)?
+- [ ] ¿Dibujé el diagrama entidad-relación (ER)?
+
+### Arquitectura
+- [ ] ¿Separé en capas (Controller → Service → Repository)?
+- [ ] ¿Cada capa tiene una responsabilidad única?
+- [ ] ¿Inyecté dependencias correctamente (@Autowired)?
+
+### Base de Datos
+- [ ] ¿Creé las tablas con PRIMARY KEY, FOREIGN KEY?
+- [ ] ¿Validé UNIQUE, NOT NULL donde corresponde?
+- [ ] ¿Usa AUTO_INCREMENT para IDs?
+
+### Seguridad
+- [ ] ¿Hasheo contraseñas con BCrypt (NO texto plano)?
+- [ ] ¿Valido entrada en cada endpoint?
+- [ ] ¿Protejo endpoints sensibles con @PreAuthorize?
+- [ ] ¿Evito inyección SQL (siempre uso JPA o prepared statements)?
+
+### Código
+- [ ] ¿Sin lógica de negocio en Controllers?
+- [ ] ¿Sin SQL directo en código (uso ORM)?
+- [ ] ¿Nombres de variables/métodos claros y descriptivos?
+- [ ] ¿Manejo excepciones adecuadamente?
+
+### Testing
+- [ ] ¿Tests unitarios para lógica crítica (Services)?
+- [ ] ¿Tests de integración para flujos completos?
+- [ ] ¿Cobertura mínima del 70%?
+- [ ] ¿Todos los tests pasan antes de commit?
+
+---
+
+## 🎓 Recursos para Profundizar
+
+### Fundamentos
+- Spring Boot docs: https://spring.io/projects/spring-boot
+- JPA/Hibernate: https://hibernate.org/orm/
+- Spring Security: https://spring.io/projects/spring-security
+
+### Seguridad
+- OWASP Top 10: https://owasp.org/www-project-top-ten/
+- BCrypt explicado: https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
+
+### Arquitectura
+- Clean Architecture: Robert C. Martin
+- Domain-Driven Design: Eric Evans
+- Arquitectura hexagonal: Alistair Cockburn
+
+---
+
+## 💭 Reflexión Final
+
+Este proyecto tiene **100 líneas relevantes**. No es cantidad, es **calidad de decisiones**. 
+
+Cuando escribas tu próximo proyecto:
+1. **Piensa primero**: Modelado, arquitectura, seguridad
+2. **Divide responsabilidades**: Capas, inyección, interfaces
+3. **Prueba todo**: Tests unitarios + integración + E2E
+4. **Documenta decisiones**: Por qué elegiste MySQL vs PostgreSQL, por qué BCrypt, etc.
+
+Eso hace la diferencia entre un "junior que sabe copypastear" y un "ingeniero que entiende sistemas".
+
+¡Adelante! 🚀
