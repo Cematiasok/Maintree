@@ -4,7 +4,7 @@ import com.maintree.proyecto.model.Usuario;
 import com.maintree.proyecto.service.UsuarioService;
 import com.maintree.proyecto.dao.RolRepository;
 import com.maintree.proyecto.model.Rol;
-import com.maintree.proyecto.util.PasswordHasher;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,6 +28,9 @@ public class UsuarioController {
 
     @Autowired
     private RolRepository rolRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @GetMapping("/usuarios")
     public List<Usuario> getUsuarios(@RequestParam(required = false) String rol,
@@ -62,7 +65,7 @@ public class UsuarioController {
             existing.setEspecialidad(update.getEspecialidad() != null ? update.getEspecialidad() : existing.getEspecialidad());
             // actualizar password si viene - SIEMPRE hashear
             if (update.getPassword() != null && !update.getPassword().isEmpty()) {
-                existing.setPassword(PasswordHasher.hashPassword(update.getPassword()));
+                existing.setPassword(passwordEncoder.encode(update.getPassword()));
             }
             // actualizar isActive si viene
             if (update.getIsActive() != null) existing.setIsActive(update.getIsActive());

@@ -1,6 +1,6 @@
 package com.maintree.proyecto;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.maintree.proyecto.dao.RolRepository;
 import com.maintree.proyecto.dao.UsuarioRepository;
 import com.maintree.proyecto.model.Rol;
@@ -8,7 +8,7 @@ import com.maintree.proyecto.model.Usuario;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;

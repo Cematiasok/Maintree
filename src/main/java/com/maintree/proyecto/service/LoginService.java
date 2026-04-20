@@ -2,8 +2,8 @@ package com.maintree.proyecto.service;
 
 import com.maintree.proyecto.dao.UsuarioRepository;
 import com.maintree.proyecto.model.Usuario;
-import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -11,6 +11,9 @@ public class LoginService {
 
     @Autowired
     private UsuarioRepository usuarioRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     public boolean validarCredenciales(String email, String password) {
         try {
@@ -23,8 +26,8 @@ public class LoginService {
             }
 
             System.out.println("Usuario encontrado. Verificando estado activo...");
-            Boolean isActive = usuario.getIsActive(); // Usar el getter que maneja null
-            if (!Boolean.TRUE.equals(isActive)) {    // Forma segura de comparar Boolean
+            Boolean isActive = usuario.getIsActive();
+            if (!Boolean.TRUE.equals(isActive)) {
                 System.out.println("Usuario no está activo");
                 return false;
             }
@@ -36,8 +39,7 @@ public class LoginService {
                 return false;
             }
 
-            // Comparamos la contraseña del formulario con el hash de la BD
-            boolean result = BCrypt.checkpw(password, hashedPassword);
+            boolean result = passwordEncoder.matches(password, hashedPassword);
             System.out.println("Resultado de validación de contraseña: " + result);
             return result;
         } catch (Exception e) {

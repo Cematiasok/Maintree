@@ -2,7 +2,7 @@ package com.maintree.proyecto.model;
 
 import jakarta.persistence.*;
 
-import java.util.Date;
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -36,8 +36,7 @@ public class Usuario {
     private String resetToken;
 
     @Column(name = "reset_token_expiry")
-    @Temporal(TemporalType.TIMESTAMP)
-    private Date resetTokenExpiry;
+    private LocalDateTime resetTokenExpiry;
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
@@ -124,11 +123,11 @@ public class Usuario {
         this.resetToken = resetToken;
     }
 
-    public Date getResetTokenExpiry() {
+    public LocalDateTime getResetTokenExpiry() {
         return resetTokenExpiry;
     }
 
-    public void setResetTokenExpiry(Date resetTokenExpiry) {
+    public void setResetTokenExpiry(LocalDateTime resetTokenExpiry) {
         this.resetTokenExpiry = resetTokenExpiry;
     }
 

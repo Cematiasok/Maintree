@@ -2,6 +2,8 @@
 
 Esta guía te enseña a **pensar y codificar** como ingeniero software, paso a paso. El objetivo es que en tu próximo proyecto, no necesites ayuda de IA: entiendas **por qué** se hace cada cosa.
 
+> **Estado del proyecto:** Spring Boot 4.0.5 · Java 25 · Hibernate 7 · Spring Security 7 · Spring Framework 7
+
 ---
 
 ## 🏛️ Parte 1: Arquitectura y Decisiones de Diseño
@@ -155,55 +157,76 @@ usuarios.put(email, hashedPassword);
 
 1. **Salt automático**: Cada hash incluye un salt único → mismo password, hashes diferentes
 2. **Función lenta**: Tardanza deliberada (por defecto, rounds=10) → imposible fuerza bruta
-3. **Verificación segura**: `BCrypt.checkpw(plaintext, hash)` compara sin hasher el plaintext
+3. **Verificación segura**: `passwordEncoder.matches(plain, hash)` — Spring lo hace internamente
+
+> ⚠️ Antes usábamos la librería `jbcrypt` (abandonada). Hoy Spring Security ya trae `BCryptPasswordEncoder` incluido. **Nunca agregues librerías externas para hashing de passwords si Spring Security ya está en el proyecto.**
 
 ```java
-// Spring Security proporciona BCryptPasswordEncoder:
+// Spring Security provee BCryptPasswordEncoder:
 @Bean
 public PasswordEncoder passwordEncoder() {
     return new BCryptPasswordEncoder();  // rounds=10 por defecto
 }
 
-// Guardar:
+// Guardar (en RegisterService o AdminSeeder):
 String hashedPassword = passwordEncoder.encode("MiPassword123");
 // Resultado: $2a$10$... (63 chars, incluye salt + hash)
 
-// Verificar:
+// Verificar (en LoginService):
 boolean valido = passwordEncoder.matches("MiPassword123", hashedPassword);
 ```
 
 ### Spring Security: Control de Acceso
 
-Spring Security maneja **autenticación** (¿quién eres?) y **autorización** (¿qué puedes hacer?):
+Spring Security maneja **autenticación** (¿quién eres?) y **autorización** (¿qué podés hacer?).
+
+#### CORS en Spring Security (Spring Framework 7 / Boot 4)
+
+**¿Por qué no usar `WebMvcConfigurer.addCorsMappings()`?**
+En Spring Framework 7, ese método fue deprecado. Y más importante: si CORS se configura a nivel MVC, Spring Security lo procesa **después** del filtro de seguridad — lo que puede causar que preflight requests (OPTIONS) sean rechazadas antes de llegar al MVC.
+
+La forma correcta es un `@Bean` de `CorsConfigurationSource` + `.cors()` en el chain:
 
 ```java
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
-    
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable())  // Para APIs REST
+            .cors(Customizer.withDefaults())  // Lee el bean CorsConfigurationSource
+            .csrf(csrf -> csrf.disable())      // Para APIs REST
             .authorizeHttpRequests(auth -> auth
-                // Públicas (sin autenticación)
                 .requestMatchers("/api/login", "/api/register").permitAll()
-                // Solo ADMIN
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                // Cualquier cosa autenticada
                 .anyRequest().authenticated()
             )
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
             .httpBasic(Customizer.withDefaults());
         return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(List.of("*"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 }
 ```
 
 **Explícito línea a línea:**
-- `.authorizeHttpRequests()`: Define qué endpoint necesita qué
+- `.cors(Customizer.withDefaults())`: Le dice a Security que use el `CorsConfigurationSource` bean
+- `.csrf().disable()`: Para APIs REST sin forms HTML (en apps con forms: activar CSRF)
 - `permitAll()`: Sin autenticación
 - `hasRole("ADMIN")`: Solo usuarios con rol ADMIN
-- `authenticated()`: Requiere ser autenticado (cualquier usuario válido)
+- `authenticated()`: Cualquier usuario autenticado
+- `SessionCreationPolicy.IF_REQUIRED`: Crea sesión solo cuando hay login (no crea sesiones anónimas)
 
 ---
 
@@ -230,6 +253,11 @@ public class Usuario {
     
     @Column(name = "isActive")
     private Boolean isActive;  // Requiere aprobación admin
+
+    // LocalDateTime en lugar de Date — Hibernate 7 lo mapea nativo a TIMESTAMP
+    // ⚠️ NUNCA uses @Temporal con Date en Hibernate 7+ — está deprecado
+    @Column(name = "reset_token_expiry")
+    private LocalDateTime resetTokenExpiry;
     
     // OJO: Relación N:M
     @ManyToMany(fetch = FetchType.EAGER)
@@ -254,6 +282,7 @@ public class Usuario {
 - `@ManyToMany`: Un usuario puede tener múltiples roles, un rol múltiples usuarios
 - `FetchType.EAGER`: Trae roles inmediatamente al cargar usuario (vs. LAZY = bajo demanda)
 - `HashSet<Rol>`: Evita duplicados automáticamente
+- `LocalDateTime` (no `Date`): Java Time API moderna — Hibernate 7 mapea a `TIMESTAMP` sin `@Temporal`
 
 ### 4.2 CAPA ACCESO A DATOS (Repository/DAO)
 
@@ -654,18 +683,42 @@ ResetPasswordService
 
 ## 🚀 Parte 7: Stack Tecnológico — ¿Por Qué Esta Combinación?
 
-| Tecnología | Por qué | Alternativa |
-|-----------|--------|---------|
-| **Spring Boot** | Framework estándar industria, productivo, comunidad enorme | Quarkus, Micronaut |
-| **JPA/Hibernate** | ORM estándar para Java, maneja SQL automáticamente | MyBatis, jOOQ |
-| **Spring Security** | Autenticación/autorización battle-tested, integración perfecta con Spring | Apache Shiro, Auth0 |
-| **MySQL** | BD relacional estable, ampliamente soportada | PostgreSQL, MariaDB |
-| **Maven** | Build tool estándar, gestión de dependencias | Gradle |
-| **JUnit + Mockito** | Testing estándar Java | TestNG, AssertJ |
+| Tecnología | Versión | Por qué | Alternativa |
+|-----------|---------|--------|---------|
+| **Spring Boot** | 4.0.5 | Framework estándar industria, productivo, comunidad enorme | Quarkus, Micronaut |
+| **Java** | 25 | LTS moderno, records, pattern matching, virtual threads | — |
+| **JPA/Hibernate** | 7.x | ORM estándar Java, Hibernate 7 elimina `@Temporal`, mejora `LocalDateTime` | MyBatis, jOOQ |
+| **Spring Security** | 7.x | Autenticación/autorización battle-tested, `CorsConfigurationSource` integrado | Apache Shiro, Auth0 |
+| **MySQL Connector/J** | 9.6.0 | Última versión estable, soporte completo MySQL 8 | — |
+| **MySQL** | 8.x | BD relacional estable, ampliamente soportada | PostgreSQL, MariaDB |
+| **Maven** | 3.9+ | Build tool estándar, gestión de dependencias | Gradle |
+| **JUnit 5 + Mockito** | (via Boot) | Testing estándar Java | TestNG, AssertJ |
 
 ---
 
-## 📋 Parte 8: Checklist para tu Próximo Proyecto
+## 🔄 Parte 8: Lo que Cambió al Migrar a Spring Boot 4 — Y Por Qué Importa
+
+Entender las migraciones te hace mejor programador. Acá está el resumen de qué cambió y el razonamiento:
+
+### Spring Boot 4 / Spring Framework 7: Cambios reales en este proyecto
+
+| Antes (Boot 3.x) | Ahora (Boot 4.x) | Razón |
+|---|---|---|
+| `spring-boot-starter-web` | `spring-boot-starter-webmvc` | Boot 4 separó `webmvc` de `webflux` — más explícito |
+| `import com.fasterxml.jackson` | `import tools.jackson` | Jackson 3 cambió el group ID completamente |
+| `@MockBean` / `@SpyBean` (Spring) | `@Mock` / `@Spy` (Mockito puro) | Spring removió sus propios wrappers — usá Mockito directamente |
+| `WebMvcConfigurer.addCorsMappings()` | `CorsConfigurationSource @Bean` | El método fue deprecado en Framework 7 — CORS va en Security |
+| `@Temporal(TIMESTAMP) + Date` | `LocalDateTime` sin anotación | Hibernate 7 deprecó `@Temporal` — la Java Time API es nativa |
+| `org.hibernate.dialect.H2Dialect` en properties | (sin esa property) | Hibernate 7 autodetecta el dialect — declararlo manualmente genera warning |
+| `import ...boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc` | `import ...boot.webmvc.test.autoconfigure.AutoConfigureMockMvc` | En Boot 4, el test de WebMVC tiene su propio módulo separado |
+
+### Lección clave
+
+> Los frameworks evolucionan. Lo importante no es memorizar las APIs — es saber **cómo investigar**: leer el migration guide oficial, inspeccionar los jars con `jar tf`, usar `javap -verbose` para ver annotations deprecadas. Esas son las herramientas de un programador real.
+
+---
+
+## 📋 Parte 9: Checklist para tu Próximo Proyecto
 
 Cuando hagas el próximo proyecto SIN ayuda de IA, verifica:
 

@@ -2,16 +2,16 @@ package com.maintree.proyecto.service;
 
 import com.maintree.proyecto.dao.UsuarioRepository;
 import com.maintree.proyecto.model.Usuario;
-import com.maintree.proyecto.util.PasswordHasher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import java.net.URL;
-import java.util.Date;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Service
@@ -23,6 +23,9 @@ public class PasswordRecoveryService {
     @Autowired
     private JavaMailSender mailSender;
 
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     private static final long EXPIRATION_TIME_MS = 3600000; // 1 hora
 
     public boolean initiatePasswordReset(String email, String requestUrl) {
@@ -32,7 +35,7 @@ public class PasswordRecoveryService {
         }
 
         String token = UUID.randomUUID().toString();
-        Date expiryDate = new Date(System.currentTimeMillis() + EXPIRATION_TIME_MS);
+        LocalDateTime expiryDate = LocalDateTime.now().plusNanos(EXPIRATION_TIME_MS * 1_000_000L);
 
         usuario.setResetToken(token);
         usuario.setResetTokenExpiry(expiryDate);
@@ -45,11 +48,11 @@ public class PasswordRecoveryService {
     public boolean finalizePasswordReset(String token, String newPassword) {
         Usuario usuario = usuarioRepository.findByResetToken(token);
 
-        if (usuario == null || usuario.getResetTokenExpiry() == null || usuario.getResetTokenExpiry().before(new Date())) {
+        if (usuario == null || usuario.getResetTokenExpiry() == null || usuario.getResetTokenExpiry().isBefore(LocalDateTime.now())) {
             return false;
         }
 
-        String hashedPassword = PasswordHasher.hashPassword(newPassword);
+        String hashedPassword = passwordEncoder.encode(newPassword);
         usuario.setPassword(hashedPassword);
 
         usuario.setResetToken(null);

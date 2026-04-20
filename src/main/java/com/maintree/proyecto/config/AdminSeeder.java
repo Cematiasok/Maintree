@@ -4,11 +4,11 @@ import com.maintree.proyecto.dao.RolRepository;
 import com.maintree.proyecto.dao.UsuarioRepository;
 import com.maintree.proyecto.model.Rol;
 import com.maintree.proyecto.model.Usuario;
-import com.maintree.proyecto.util.PasswordHasher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Collections;
 
@@ -23,6 +23,9 @@ public class AdminSeeder implements CommandLineRunner {
 
     @Autowired
     private Environment env;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @Override
     public void run(String... args) throws Exception {
@@ -49,7 +52,7 @@ public class AdminSeeder implements CommandLineRunner {
             admin.setNombre("Admin");
             admin.setApellido("Root");
             admin.setEmail(adminEmail);
-            admin.setPassword(PasswordHasher.hashPassword(adminPassword));
+            admin.setPassword(passwordEncoder.encode(adminPassword));
             admin.setActive(Boolean.TRUE);
             admin.setRoles(Collections.singleton(adminRole));
             usuarioRepository.save(admin);
